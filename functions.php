@@ -71,12 +71,38 @@ function initials(string $name): string
     return $name === '' ? '?' : mb_strtoupper(mb_substr($name, 0, 1));
 }
 
+/** Stable accent colour for a logo tile, derived from the name so it never flickers. */
+function avatar_color(string $seed): string
+{
+    $palette = ['#4648d4', '#0F172A', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+    return $palette[crc32($seed) % count($palette)];
+}
+
 // ---- Redirects ----
 
 function redirect(string $path): void
 {
     header('Location: ' . $path);
     exit;
+}
+
+/**
+ * Absolute URL to a page in this app — emails cannot use the relative links the
+ * rest of the site does. Set APP_URL in .env for links that work outside
+ * localhost; otherwise it is derived from the current request.
+ */
+function app_url(string $path = ''): string
+{
+    $base = env('APP_URL');
+
+    if (!$base) {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $dir = rtrim(str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? ''))), '/');
+        $base = $scheme . '://' . $host . $dir;
+    }
+
+    return rtrim($base, '/') . '/' . ltrim($path, '/');
 }
 
 // ---- Flash messages (survive one redirect) ----
@@ -231,4 +257,12 @@ function get_pagination(array $params, int $defaultLimit = 8, int $maxLimit = 50
     $limit = max(1, min($maxLimit, $limit));
     $offset = ($page - 1) * $limit;
     return [$page, $limit, $offset];
+}
+
+/** The current URL with ?page= swapped out, so filters survive paging. */
+function page_url(int $targetPage): string
+{
+    $qs = $_GET;
+    $qs['page'] = $targetPage;
+    return basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) . '?' . http_build_query($qs);
 }

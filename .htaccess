@@ -4,7 +4,7 @@
 </FilesMatch>
 
 # Shared includes are never meant to be requested directly.
-<FilesMatch "^(config|db|functions|auth|header|footer)\.php$">
+<FilesMatch "^(config|db|functions|auth|header|footer|site-nav|site-footer)\.php$">
     Require all denied
 </FilesMatch>
 

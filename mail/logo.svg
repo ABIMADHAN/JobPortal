@@ -1,0 +1,19 @@
+<svg width="96" height="96" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <title>CareerStudio</title>
+  <desc>
+    Source for logo.png. A white briefcase on a saturated indigo tile, rather
+    than the site's flat black icon: clients that force-invert an email (the
+    Gmail mobile apps, Chrome force dark) would turn a dark mark on
+    transparency into an invisible one, while a saturated tile stays legible on
+    any background. Regenerate the PNG (email clients cannot render SVG) with a
+    headless browser screenshot of this file at 96x96 on a transparent canvas.
+  </desc>
+  <rect x="0" y="0" width="48" height="48" rx="13" fill="#4648d4"/>
+  <g transform="translate(12,12)">
+    <rect x="1.2" y="7.4" width="21.6" height="14.4" rx="2.6" fill="#ffffff"/>
+    <path d="M8.6 7.4V6.1A2.1 2.1 0 0 1 10.7 4h2.6a2.1 2.1 0 0 1 2.1 2.1v1.3"
+          fill="none" stroke="#ffffff" stroke-width="2.1" stroke-linecap="round"/>
+    <rect x="1.2" y="12.8" width="21.6" height="1.5" fill="#4648d4"/>
+    <rect x="10.2" y="11.7" width="3.6" height="3.7" rx="0.8" fill="#4648d4"/>
+  </g>
+</svg>

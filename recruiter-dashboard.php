@@ -177,6 +177,17 @@ if (is_post()) {
             $interviewValue = date('Y-m-d H:i:s', $ts);
         }
 
+        // Read the current row first so we only email the student about fields
+        // that actually changed — re-saving the dialog unchanged sends nothing.
+        $stmt = $pdo->prepare(
+            'SELECT a.status, a.notes, a.interview_at
+             FROM applications a
+             INNER JOIN jobs j ON a.job_id = j.id
+             WHERE a.id = :id AND j.company_id = :company_id LIMIT 1'
+        );
+        $stmt->execute([':id' => $applicationId, ':company_id' => $companyId]);
+        $before = $stmt->fetch();
+
         $stmt = $pdo->prepare(
             'UPDATE applications a
              INNER JOIN jobs j ON a.job_id = j.id
@@ -191,7 +202,28 @@ if (is_post()) {
             ':company_id' => $companyId,
         ]);
 
-        flash('Applicant updated.');
+        $changed = [];
+        if ($before) {
+            if ($before['status'] !== $status) {
+                $changed[] = 'status';
+            }
+            if ((string) $before['interview_at'] !== (string) $interviewValue) {
+                $changed[] = 'interview';
+            }
+            if (trim((string) $before['notes']) !== trim($notes)) {
+                $changed[] = 'notes';
+            }
+        }
+
+        if ($changed) {
+            // Loaded on demand so ordinary dashboard views never pull in PHPMailer.
+            require_once __DIR__ . '/notifications.php';
+            notify_application_updated($pdo, $applicationId, $changed);
+            flash('Applicant updated. The student has been emailed.');
+        } else {
+            flash('Applicant updated.');
+        }
+
         redirect('recruiter-dashboard.php?tab=applicants');
     }
 

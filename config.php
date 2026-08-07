@@ -24,6 +24,10 @@ function load_env(string $path): void
         [$key, $value] = explode('=', $line, 2);
         $key = trim($key);
         $value = trim($value);
+        // Strip surrounding quotes, e.g. MAIL_FROM_NAME="My Portal".
+        if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && $value[-1] === $value[0]) {
+            $value = substr($value, 1, -1);
+        }
         if ($key !== '' && getenv($key) === false) {
             putenv("$key=$value");
             $_ENV[$key] = $value;
@@ -48,7 +52,7 @@ define('DB_PASS', env('DB_PASS', ''));
 
 // ---- App ----
 define('APP_ENV', env('APP_ENV', 'local'));
-define('APP_NAME', 'JobPortal');
+define('APP_NAME', 'CareerStudio');
 
 // ---- File uploads (the one and only sub-folder in this project) ----
 define('UPLOAD_DIR', __DIR__ . '/uploads/');
