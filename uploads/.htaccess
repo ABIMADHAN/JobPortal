@@ -1,0 +1,7 @@
+# Uploaded resumes must never be executable and never directory-listable.
+<FilesMatch "\.(php|php\d|phtml|pht|phar)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes -ExecCGI
+php_flag engine off
