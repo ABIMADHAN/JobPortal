@@ -186,3 +186,20 @@ CREATE TABLE password_resets (
         ON DELETE CASCADE,
     KEY idx_password_resets_token (token_hash)
 ) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Table: email_queue (asynchronous background mail queue)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_queue (
+    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    recipient       VARCHAR(255) NOT NULL,
+    subject         VARCHAR(255) NOT NULL,
+    body            LONGTEXT     NOT NULL,
+    status          ENUM('pending', 'processing', 'sent', 'failed') NOT NULL DEFAULT 'pending',
+    attempts        TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    last_error      TEXT         DEFAULT NULL,
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at    DATETIME     DEFAULT NULL,
+    INDEX idx_status_created (status, created_at)
+) ENGINE=InnoDB;
+

@@ -78,7 +78,8 @@ function rail_items(): array
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= e($pageTitle) ?> — <?= e(APP_NAME) ?></title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+<link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
 </head>
 <body class="<?= $layout === 'app' ? 'is-app' : 'is-site' ?>">
 
@@ -88,59 +89,66 @@ function rail_items(): array
         ? 'recruiter-dashboard.php?tab=applicants&status=applied'
         : 'student-dashboard.php';
 ?>
-  <!-- ============ Signed-in shell: icon rail + app bar ============ -->
+  <!-- ============ Signed-in shell: full-width topbar + app body with sidebar ============ -->
   <div class="app-shell">
 
-    <aside class="rail">
-      <a href="<?= e(dashboard_url()) ?>" class="rail-logo" aria-label="<?= e(APP_NAME) ?> home">
-        <?= nav_icon('layers') ?>
-      </a>
-
-      <nav class="rail-nav">
-        <?php foreach (rail_items() as $item): ?>
-          <a href="<?= e($item['href']) ?>"
-             class="rail-btn<?= $activeNav === $item['key'] ? ' active' : '' ?>"
-             aria-label="<?= e($item['label']) ?>"
-             data-tip="<?= e($item['label']) ?>">
-            <?= nav_icon($item['icon']) ?>
-          </a>
-        <?php endforeach; ?>
-      </nav>
-
-      <div class="rail-foot">
-        <form method="post" action="logout.php">
-          <?= csrf_field() ?>
-          <button type="submit" class="rail-btn rail-logout" aria-label="Logout" data-tip="Logout">
-            <?= nav_icon('logout') ?>
-          </button>
-        </form>
-      </div>
-    </aside>
-
-    <div class="app-main">
-      <header class="topbar">
+    <header class="topbar">
+      <div class="topbar-left">
+        <a href="<?= e(dashboard_url()) ?>" class="topbar-logo" aria-label="<?= e(APP_NAME) ?> home">
+          <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1; font-size: 24px; color: #0f172a;">work</span>
+          <span class="brand">CareerStudio</span>
+        </a>
         <h1 class="topbar-title"><?= e($topbarTitle) ?></h1>
-        <div class="topbar-actions">
-          <a href="<?= e($notifyHref) ?>" class="topbar-icon"
-             aria-label="<?= $notifications ?> notifications" data-tip="<?= $notifications ?> to review">
-            <?= nav_icon('bell') ?>
-            <?php if ($notifications > 0): ?>
-              <span class="topbar-dot"><?= $notifications > 9 ? '9+' : $notifications ?></span>
-            <?php endif; ?>
-          </a>
-          <span class="topbar-sep"></span>
-          <a href="profile.php" class="topbar-user" data-tip="My Profile">
-            <span class="topbar-avatar"><?= e(initials(current_user_name())) ?></span>
-            <span class="topbar-name"><?= e(current_user_name()) ?></span>
-          </a>
+      </div>
+      <div class="topbar-actions">
+        <a href="<?= e($notifyHref) ?>" class="topbar-icon"
+           aria-label="<?= $notifications ?> notifications" data-tip="<?= $notifications ?> to review">
+          <?= nav_icon('bell') ?>
+          <?php if ($notifications > 0): ?>
+            <span class="topbar-dot"><?= $notifications > 9 ? '9+' : $notifications ?></span>
+          <?php endif; ?>
+        </a>
+        <span class="topbar-sep"></span>
+        <a href="profile.php" class="topbar-user" data-tip="My Profile">
+          <span class="topbar-avatar"><?= e(initials(current_user_name())) ?></span>
+          <span class="topbar-name"><?= e(current_user_name()) ?></span>
+        </a>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="rail">
+        <nav class="rail-nav">
+          <?php foreach (rail_items() as $item): ?>
+            <a href="<?= e($item['href']) ?>"
+               class="rail-btn<?= $activeNav === $item['key'] ? ' active' : '' ?>"
+               aria-label="<?= e($item['label']) ?>"
+               data-tip="<?= e($item['label']) ?>">
+              <?= nav_icon($item['icon']) ?>
+            </a>
+          <?php endforeach; ?>
+        </nav>
+
+        <div class="rail-foot">
+          <form method="post" action="logout.php">
+            <?= csrf_field() ?>
+            <button type="submit" class="rail-btn rail-logout" aria-label="Logout" data-tip="Logout">
+              <?= nav_icon('logout') ?>
+            </button>
+          </form>
         </div>
-      </header>
+      </aside>
+
+      <div class="app-main">
 
 <?php else: ?>
   <!-- ============ Public shell: horizontal navbar ============ -->
   <nav class="navbar">
     <div class="navbar-inner">
-      <a href="index.php" class="brand">Job<span>Portal</span></a>
+      <a href="index.php" class="brand" style="display: flex; align-items: center; gap: 8px;">
+        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1; font-size: 24px;">work</span>
+        CareerStudio
+      </a>
       <div class="nav-links">
         <a href="jobs.php"<?= $activeNav === 'jobs' ? ' class="active"' : '' ?>>Browse Jobs</a>
         <?php if (is_logged_in()): ?>

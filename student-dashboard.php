@@ -204,7 +204,7 @@ require __DIR__ . '/header.php';
                 <a href="jobs.php?id=<?= (int) $app['job_id'] ?>"><?= e($app['title']) ?></a>
               </h4>
 
-              <?php if ($app['interview_at'] && strtotime($app['interview_at']) >= time()): ?>
+              <?php if ($app['interview_at'] && strtotime($app['interview_at']) >= time() && !in_array($app['status'], ['rejected', 'withdrawn'], true)): ?>
                 <div class="board-card-note">Interview <?= e(format_datetime($app['interview_at'])) ?></div>
               <?php endif; ?>
 

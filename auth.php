@@ -102,6 +102,7 @@ function notification_count(PDO $pdo): int
         $stmt = $pdo->prepare(
             'SELECT COUNT(*) FROM applications
              WHERE student_id = :uid
+               AND status NOT IN ("withdrawn", "rejected")
                AND (status IN ("shortlisted", "hired")
                     OR (interview_at IS NOT NULL AND interview_at >= NOW()))'
         );

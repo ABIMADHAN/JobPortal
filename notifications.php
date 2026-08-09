@@ -141,11 +141,14 @@ function notify_application_updated(PDO $pdo, int $applicationId, array $changed
     }
 
     $status = (string) $ctx['status'];
-    $interview = $ctx['interview_at'];
+    $isInactiveStatus = in_array($status, ['rejected', 'withdrawn'], true);
+
+    // If status is rejected or withdrawn, any scheduled interview is inactive.
+    $interview = $isInactiveStatus ? null : $ctx['interview_at'];
     $upcoming = $interview && strtotime((string) $interview) > time();
 
-    // An interview slot is the thing students must act on, so it leads.
-    $isInterview = in_array('interview', $changed, true) && $interview;
+    // An interview slot is the thing students must act on, so it leads only if active.
+    $isInterview = in_array('interview', $changed, true) && $interview && !$isInactiveStatus;
 
     $content = email_hero(
             $status,

@@ -18,8 +18,8 @@
       --dark-btn-hover: #1E293B;
 
       /* Typography */
-      --font-inter: 'Inter', sans-serif;
-      --font-manrope: 'Manrope', sans-serif;
+      --font-inter: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-manrope: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
       /* Spacing & Layout */
       --container-max: 1280px;
@@ -38,12 +38,18 @@
       padding: 0;
     }
 
+    html, body, button, input, select, textarea, table, th, td, h1, h2, h3, h4, h5, h6, p, span, a, label, div {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      letter-spacing: -0.015em;
+    }
+
     body {
       font-family: var(--font-inter);
       background-color: var(--bg-surface);
       color: var(--text-on-surface);
       font-size: 16px;
       line-height: 24px;
+      letter-spacing: -0.015em;
       -webkit-font-smoothing: antialiased;
       min-height: 100vh;
     }
@@ -88,31 +94,24 @@
 
     .display-lg-mobile {
       font-family: var(--font-manrope);
-      font-size: 32px;
-      line-height: 40px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
     }
 
     .headline-lg {
-      font-family: var(--font-manrope);
-      font-size: 30px;
-      line-height: 38px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
+      font-family: var(--font-inter);
+      font-size: 32px;
+      line-height: 40px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: #000000;
     }
 
     .headline-md {
-      font-family: var(--font-manrope);
+      font-family: var(--font-inter);
       font-size: 24px;
       line-height: 32px;
       font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-
-    .body-lg {
-      font-size: 18px;
-      line-height: 28px;
+      letter-spacing: -0.015em;
+      color: #000000;
     }
 
     .body-md {
@@ -246,7 +245,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      color: var(--primary);
+      color: #000000;
     }
 
     .nav-links {
@@ -878,8 +877,10 @@
 .stat-strip {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 16px;
   margin-top: 28px;
+  margin-bottom: 28px;
+  width: 100%;
 }
 
 @media (min-width: 768px) {
@@ -889,16 +890,24 @@
 }
 
 .stat-strip .stat-box {
-  background: var(--surface-container-lowest);
+  background: var(--surface-container-lowest, #ffffff);
   border: 1px solid rgba(198, 198, 205, 0.5);
   border-radius: 16px;
-  padding: 16px 20px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.stat-strip .stat-box:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.1);
+  border-color: #cbd5e1;
 }
 
 .stat-strip .stat-value {
   font-family: var(--font-manrope);
-  font-size: 28px;
-  line-height: 36px;
+  font-size: 2.2rem;
+  line-height: 1.1;
   font-weight: 800;
   color: var(--secondary);
   transition: color 0.4s ease;
@@ -1593,12 +1602,14 @@
    widens the whole document and pushes every page sideways. Let the brand and
    the action buttons scale down instead.
    ============================================================ */
-.brand {
-  font-family: var(--font-manrope);
-  font-size: 24px;
-  line-height: 32px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+.brand,
+.text-style {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 600;
+  font-size: 32px;
+  line-height: 40px;
+  color: #000000;
+  letter-spacing: -0.015em;
 }
 
 .header-inner {
@@ -1649,3 +1660,54 @@
 .opening-meta {
   overflow-wrap: anywhere;
 }
+
+/* --- Profile Grid Layout --- */
+.profile-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 24px !important;
+  align-items: stretch;
+  width: 100%;
+}
+
+.profile-grid .card {
+  margin-top: 0 !important;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-grid .card h2 {
+  margin-bottom: 20px;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.profile-grid .card form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.profile-grid .card .btn-primary,
+.profile-grid .card .btn-secondary {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+.profile-grid-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .profile-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .profile-grid-full {
+    grid-column: auto !important;
+  }
+}
+

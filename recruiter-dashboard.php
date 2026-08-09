@@ -168,7 +168,7 @@ if (is_post()) {
 
         // <input type="datetime-local"> submits YYYY-MM-DDTHH:MM
         $interviewValue = null;
-        if ($interviewAt !== '') {
+        if (!in_array($status, ['rejected', 'withdrawn'], true) && $interviewAt !== '') {
             $ts = strtotime($interviewAt);
             if ($ts === false) {
                 flash('Interview date is not a valid date and time.', 'error');
@@ -187,6 +187,11 @@ if (is_post()) {
         );
         $stmt->execute([':id' => $applicationId, ':company_id' => $companyId]);
         $before = $stmt->fetch();
+
+        if ($before && in_array($before['status'], ['rejected', 'withdrawn'], true)) {
+            flash('This application has been closed and cannot be modified.', 'error');
+            redirect('recruiter-dashboard.php?tab=applicants');
+        }
 
         $stmt = $pdo->prepare(
             'UPDATE applications a
@@ -364,8 +369,10 @@ if (isset($_GET['review'])) {
     $reviewId = (int) $_GET['review'];
     foreach ($applicants as $applicant) {
         if ((int) $applicant['application_id'] === $reviewId) {
-            $reviewApplicant = $applicant;
-            $tab = 'applicants';
+            if (!in_array($applicant['status'], ['rejected', 'withdrawn'], true)) {
+                $reviewApplicant = $applicant;
+                $tab = 'applicants';
+            }
             break;
         }
     }
@@ -442,19 +449,25 @@ require __DIR__ . '/header.php';
                 <article class="board-card<?= $key === 'shortlisted' ? ' board-card-accent' : '' ?>">
                   <div class="board-card-company"><?= e($row['job_title']) ?></div>
                   <h4 class="board-card-title">
-                    <a href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $row['application_id'] ?>">
+                    <?php if (!in_array($row['status'], ['rejected', 'withdrawn'], true)): ?>
+                      <a href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $row['application_id'] ?>">
+                        <?= e($row['full_name']) ?>
+                      </a>
+                    <?php else: ?>
                       <?= e($row['full_name']) ?>
-                    </a>
+                    <?php endif; ?>
                   </h4>
 
-                  <?php if ($row['interview_at'] && strtotime($row['interview_at']) >= time()): ?>
+                  <?php if ($row['interview_at'] && strtotime($row['interview_at']) >= time() && !in_array($row['status'], ['rejected', 'withdrawn'], true)): ?>
                     <div class="board-card-note">Interview <?= e(format_datetime($row['interview_at'])) ?></div>
                   <?php endif; ?>
 
                   <div class="board-card-foot">
                     <span class="badge badge-<?= e($row['status']) ?>"><?= e(status_label($row['status'])) ?></span>
-                    <a class="btn btn-secondary btn-sm"
-                       href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $row['application_id'] ?>">Review</a>
+                    <?php if (!in_array($row['status'], ['rejected', 'withdrawn'], true)): ?>
+                      <a class="btn btn-secondary btn-sm"
+                         href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $row['application_id'] ?>">Review</a>
+                    <?php endif; ?>
                   </div>
                 </article>
               <?php endforeach; ?>
@@ -558,8 +571,12 @@ require __DIR__ . '/header.php';
                   <span class="badge badge-<?= e($applicant['status']) ?>"><?= e(status_label($applicant['status'])) ?></span>
                 </td>
                 <td data-label="Actions">
-                  <a class="btn btn-secondary btn-sm"
-                     href="<?= e($applicantsUrl) ?>&review=<?= (int) $applicant['application_id'] ?>">Review</a>
+                  <?php if (!in_array($applicant['status'], ['rejected', 'withdrawn'], true)): ?>
+                    <a class="btn btn-secondary btn-sm"
+                       href="<?= e($applicantsUrl) ?>&review=<?= (int) $applicant['application_id'] ?>">Review</a>
+                  <?php else: ?>
+                    <span class="form-hint">&mdash;</span>
+                  <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; ?>

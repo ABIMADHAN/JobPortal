@@ -49,11 +49,11 @@ function html_to_text(string $html): string
     return trim((string) $text);
 }
 
-// Guarded so a preview/test script can define its own sendEmail() first and
-// capture the rendered HTML instead of contacting an SMTP server.
-if (!function_exists('sendEmail')):
-
-function sendEmail(string $to, string $subject, string $body): bool
+/**
+ * Direct SMTP sending function via PHPMailer.
+ * Used internally by the queue worker.
+ */
+function sendEmailImmediate(string $to, string $subject, string $body): bool
 {
     $mail = new PHPMailer(true);
 
@@ -75,9 +75,7 @@ function sendEmail(string $to, string $subject, string $body): bool
 
         $mail->addAddress($to);
 
-        // The logo travels with the message as an inline attachment. Gmail and
-        // Outlook.com both refuse data: URIs in <img>, so cid: is the only
-        // embedding that renders everywhere.
+        // The logo travels with the message as an inline attachment.
         $logo = __DIR__ . '/logo.png';
         if (is_file($logo)) {
             $mail->addEmbeddedImage($logo, MAIL_LOGO_CID, 'logo.png', 'base64', 'image/png');
@@ -90,11 +88,65 @@ function sendEmail(string $to, string $subject, string $body): bool
 
         return $mail->send();
     } catch (Exception $e) {
-        // Echoing SMTP internals would leak credentials-adjacent detail into the
-        // page and corrupt any JSON/redirect response. Log it instead.
         error_log('Mail to ' . $to . ' failed: ' . $mail->ErrorInfo);
         return false;
     }
 }
 
+/**
+ * Triggers the queue worker in a non-blocking background process.
+ */
+function trigger_queue_worker_async(): void
+{
+    $workerPath = realpath(__DIR__ . '/../queue-worker.php');
+    if (!$workerPath) {
+        return;
+    }
+
+    if (str_starts_with(strtoupper(PHP_OS), 'WIN')) {
+        pclose(popen("start /B php " . escapeshellarg($workerPath) . " > NUL 2>&1", "r"));
+    } else {
+        exec("php " . escapeshellarg($workerPath) . " > /dev/null 2>&1 &");
+    }
+}
+
+/**
+ * Enqueues an email into MySQL `email_queue` table and triggers worker asynchronously.
+ */
+function enqueue_email(string $to, string $subject, string $body): bool
+{
+    try {
+        require_once __DIR__ . '/../db.php';
+        $pdo = get_db();
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO email_queue (recipient, subject, body, status, created_at)
+             VALUES (:to, :subject, :body, "pending", NOW())'
+        );
+        $stmt->execute([
+            ':to' => $to,
+            ':subject' => $subject,
+            ':body' => $body,
+        ]);
+
+        trigger_queue_worker_async();
+        return true;
+    } catch (Exception $e) {
+        error_log('Failed to enqueue email to ' . $to . ': ' . $e->getMessage());
+        return sendEmailImmediate($to, $subject, $body);
+    }
+}
+
+// Guarded so a preview/test script can define its own sendEmail() first
+if (!function_exists('sendEmail')):
+
+/**
+ * Primary sendEmail function: enqueues asynchronously for fast HTTP response.
+ */
+function sendEmail(string $to, string $subject, string $body): bool
+{
+    return enqueue_email($to, $subject, $body);
+}
+
 endif;
+
