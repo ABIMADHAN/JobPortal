@@ -1,16 +1,7 @@
 <?php
 /**
  * recruiter-dashboard.php
- * Recruiter workspace.
- *
- *   ?tab=pipeline (default)  applicant board grouped by hiring stage
- *   ?tab=jobs                job postings table + CRUD
- *   ?tab=applicants          filterable applicant table
- *   ?new=1 / ?edit=<job_id>  job dialog
- *   ?review=<application_id> applicant review dialog
- *
- * All state changes POST back here and end in a redirect, so refreshing a page
- * never re-submits a form.
+ * Recruiter workspace with modern SaaS pipeline & candidate management layout.
  */
 
 declare(strict_types=1);
@@ -20,226 +11,342 @@ require_once __DIR__ . '/auth.php';
 require_role('recruiter');
 
 $pdo = get_db();
+auto_close_expired_jobs($pdo);
+
 $company = get_owned_company($pdo, (int) current_user_id());
 $companyId = (int) $company['id'];
 
 const JOB_TYPES = ['full-time' => 'Full-time', 'part-time' => 'Part-time', 'internship' => 'Internship', 'contract' => 'Contract'];
 const WORK_MODES = ['onsite' => 'Onsite', 'hybrid' => 'Hybrid', 'remote' => 'Remote'];
 const APPLICATION_STATUSES = [
-    'applied' => 'Applied',
-    'under_review' => 'Under Review',
-    'shortlisted' => 'Shortlisted',
-    'rejected' => 'Rejected',
-    'hired' => 'Hired',
+  'applied' => 'Applied',
+  'under_review' => 'Under Review',
+  'shortlisted' => 'Shortlisted',
+  'rejected' => 'Rejected',
+  'hired' => 'Hired',
 ];
 
-// ---------------------------------------------------------------
-// POST handlers
-// ---------------------------------------------------------------
-if (is_post()) {
-    verify_csrf();
-    $action = post('action');
-
-    // ---- Create or update a job ----
-    if ($action === 'save_job') {
-        $jobId = (int) ($_POST['job_id'] ?? 0);
-
-        $title = post('title');
-        $description = post('description');
-        $requirements = post('requirements');
-        $skills = post('skills_required');
-        $salary = post('salary');
-        $location = post('location');
-        $jobType = post('job_type');
-        $workMode = post('work_mode');
-        $vacancyCount = (int) ($_POST['vacancy_count'] ?? 1);
-        $deadline = post('deadline');
-
-        $formUrl = 'recruiter-dashboard.php?' . ($jobId ? 'edit=' . $jobId : 'new=1');
-
-        $missing = first_missing(['job title' => $title, 'job description' => $description]);
-        if ($missing !== '') {
-            fail('Please enter a ' . $missing . '.', $_POST);
-            redirect($formUrl);
-        }
-        if (!isset(JOB_TYPES[$jobType])) {
-            fail('Invalid job type.', $_POST);
-            redirect($formUrl);
-        }
-        if (!isset(WORK_MODES[$workMode])) {
-            fail('Invalid work mode.', $_POST);
-            redirect($formUrl);
-        }
-        if ($vacancyCount < 1) {
-            fail('Vacancy count must be at least 1.', $_POST);
-            redirect($formUrl);
-        }
-        if ($deadline !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $deadline)) {
-            fail('Deadline must be a valid date.', $_POST);
-            redirect($formUrl);
-        }
-
-        $values = [
-            ':title' => $title,
-            ':description' => $description,
-            ':requirements' => $requirements !== '' ? $requirements : null,
-            ':skills_required' => $skills !== '' ? $skills : null,
-            ':salary' => $salary !== '' ? $salary : null,
-            ':job_type' => $jobType,
-            ':location' => $location !== '' ? $location : null,
-            ':work_mode' => $workMode,
-            ':vacancy_count' => $vacancyCount,
-            ':deadline' => $deadline !== '' ? $deadline : null,
-        ];
-
-        if ($jobId > 0) {
-            $stmt = $pdo->prepare('SELECT id FROM jobs WHERE id = :id AND company_id = :company_id LIMIT 1');
-            $stmt->execute([':id' => $jobId, ':company_id' => $companyId]);
-            if (!$stmt->fetch()) {
-                flash('Job not found, or you do not have permission to edit it.', 'error');
-                redirect('recruiter-dashboard.php?tab=jobs');
-            }
-
-            $stmt = $pdo->prepare(
-                'UPDATE jobs SET title = :title, description = :description, requirements = :requirements,
-                        skills_required = :skills_required, salary = :salary, job_type = :job_type,
-                        location = :location, work_mode = :work_mode, vacancy_count = :vacancy_count,
-                        deadline = :deadline
-                 WHERE id = :id AND company_id = :company_id'
-            );
-            $stmt->execute($values + [':id' => $jobId, ':company_id' => $companyId]);
-            flash('Job updated.');
-        } else {
-            $stmt = $pdo->prepare(
-                'INSERT INTO jobs (company_id, title, description, requirements, skills_required, salary,
-                                    job_type, location, work_mode, vacancy_count, deadline, status)
-                 VALUES (:company_id, :title, :description, :requirements, :skills_required, :salary,
-                         :job_type, :location, :work_mode, :vacancy_count, :deadline, "open")'
-            );
-            $stmt->execute($values + [':company_id' => $companyId]);
-            flash('Job posted successfully.');
-        }
-
-        redirect('recruiter-dashboard.php?tab=jobs');
+// Helper: Calculate Skill Match Score
+function calculate_match_score(?string $candidateSkills, ?string $jobSkills): int
+{
+    if (empty($candidateSkills) || empty($jobSkills)) {
+        return 75; // Default match baseline
     }
-
-    // ---- Open / close a job ----
-    if ($action === 'toggle_status') {
-        $jobId = (int) ($_POST['job_id'] ?? 0);
-        $newStatus = post('status') === 'open' ? 'open' : 'closed';
-
-        $stmt = $pdo->prepare('UPDATE jobs SET status = :status WHERE id = :id AND company_id = :company_id');
-        $stmt->execute([':status' => $newStatus, ':id' => $jobId, ':company_id' => $companyId]);
-
-        if ($stmt->rowCount() === 0) {
-            flash('Job not found, or you do not have permission to update it.', 'error');
-        } else {
-            flash($newStatus === 'open' ? 'Job reopened.' : 'Job closed.');
-        }
-        redirect('recruiter-dashboard.php?tab=jobs');
+    
+    $candSet = array_filter(array_map('trim', explode(',', strtolower($candidateSkills))));
+    $jobSet = array_filter(array_map('trim', explode(',', strtolower($jobSkills))));
+    
+    if (empty($jobSet)) {
+        return 85;
     }
-
-    // ---- Delete a job (applications cascade via the foreign key) ----
-    if ($action === 'delete_job') {
-        $jobId = (int) ($_POST['job_id'] ?? 0);
-
-        $stmt = $pdo->prepare('DELETE FROM jobs WHERE id = :id AND company_id = :company_id');
-        $stmt->execute([':id' => $jobId, ':company_id' => $companyId]);
-
-        if ($stmt->rowCount() === 0) {
-            flash('Job not found, or you do not have permission to delete it.', 'error');
-        } else {
-            flash('Job deleted.');
+    
+    $matches = 0;
+    foreach ($candSet as $cs) {
+        foreach ($jobSet as $js) {
+            if (str_contains($cs, $js) || str_contains($js, $cs)) {
+                $matches++;
+                break;
+            }
         }
-        redirect('recruiter-dashboard.php?tab=jobs');
     }
-
-    // ---- Update an applicant's status, interview slot and notes ----
-    if ($action === 'update_application') {
-        $applicationId = (int) ($_POST['application_id'] ?? 0);
-        $status = post('status');
-        $notes = post('notes');
-        $interviewAt = post('interview_at');
-
-        if (!isset(APPLICATION_STATUSES[$status])) {
-            flash('Invalid status value.', 'error');
-            redirect('recruiter-dashboard.php?tab=applicants');
-        }
-
-        // <input type="datetime-local"> submits YYYY-MM-DDTHH:MM
-        $interviewValue = null;
-        if (!in_array($status, ['rejected', 'withdrawn'], true) && $interviewAt !== '') {
-            $ts = strtotime($interviewAt);
-            if ($ts === false) {
-                flash('Interview date is not a valid date and time.', 'error');
-                redirect('recruiter-dashboard.php?tab=applicants&review=' . $applicationId);
-            }
-            $interviewValue = date('Y-m-d H:i:s', $ts);
-        }
-
-        // Read the current row first so we only email the student about fields
-        // that actually changed — re-saving the dialog unchanged sends nothing.
-        $stmt = $pdo->prepare(
-            'SELECT a.status, a.notes, a.interview_at
-             FROM applications a
-             INNER JOIN jobs j ON a.job_id = j.id
-             WHERE a.id = :id AND j.company_id = :company_id LIMIT 1'
-        );
-        $stmt->execute([':id' => $applicationId, ':company_id' => $companyId]);
-        $before = $stmt->fetch();
-
-        if ($before && in_array($before['status'], ['rejected', 'withdrawn'], true)) {
-            flash('This application has been closed and cannot be modified.', 'error');
-            redirect('recruiter-dashboard.php?tab=applicants');
-        }
-
-        $stmt = $pdo->prepare(
-            'UPDATE applications a
-             INNER JOIN jobs j ON a.job_id = j.id
-             SET a.status = :status, a.notes = :notes, a.interview_at = :interview_at
-             WHERE a.id = :id AND j.company_id = :company_id'
-        );
-        $stmt->execute([
-            ':status' => $status,
-            ':notes' => $notes,
-            ':interview_at' => $interviewValue,
-            ':id' => $applicationId,
-            ':company_id' => $companyId,
-        ]);
-
-        $changed = [];
-        if ($before) {
-            if ($before['status'] !== $status) {
-                $changed[] = 'status';
-            }
-            if ((string) $before['interview_at'] !== (string) $interviewValue) {
-                $changed[] = 'interview';
-            }
-            if (trim((string) $before['notes']) !== trim($notes)) {
-                $changed[] = 'notes';
-            }
-        }
-
-        if ($changed) {
-            // Loaded on demand so ordinary dashboard views never pull in PHPMailer.
-            require_once __DIR__ . '/notifications.php';
-            notify_application_updated($pdo, $applicationId, $changed);
-            flash('Applicant updated. The student has been emailed.');
-        } else {
-            flash('Applicant updated.');
-        }
-
-        redirect('recruiter-dashboard.php?tab=applicants');
-    }
-
-    redirect('recruiter-dashboard.php');
+    
+    $ratio = $matches / count($jobSet);
+    $score = (int) (60 + ($ratio * 38));
+    return min(98, max(55, $score));
 }
 
 // ---------------------------------------------------------------
-// Stats
+// POST Handlers
+// ---------------------------------------------------------------
+if (is_post()) {
+  verify_csrf();
+  $action = post('action');
+
+  // ---- Create or update a job ----
+  if ($action === 'save_job') {
+    $jobId = (int) ($_POST['job_id'] ?? 0);
+
+    $title = post('title');
+    $description = post('description');
+    $requirements = post('requirements');
+    $skills = post('skills_required');
+    $salary = post('salary');
+    $location = post('location');
+    $jobType = post('job_type');
+    $workMode = post('work_mode');
+    $vacancyCount = (int) ($_POST['vacancy_count'] ?? 1);
+    $deadline = post('deadline');
+
+    $formUrl = 'recruiter-dashboard.php?' . ($jobId ? 'edit=' . $jobId : 'new=1');
+
+    $missing = first_missing(['job title' => $title, 'job description' => $description]);
+    if ($missing !== '') {
+      fail('Please enter a ' . $missing . '.', $_POST);
+      redirect($formUrl);
+    }
+    if (!isset(JOB_TYPES[$jobType])) {
+      fail('Invalid job type.', $_POST);
+      redirect($formUrl);
+    }
+    if (!isset(WORK_MODES[$workMode])) {
+      fail('Invalid work mode.', $_POST);
+      redirect($formUrl);
+    }
+    if ($vacancyCount < 1) {
+      fail('Vacancy count must be at least 1.', $_POST);
+      redirect($formUrl);
+    }
+    if ($deadline !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $deadline)) {
+      fail('Deadline must be a valid date.', $_POST);
+      redirect($formUrl);
+    }
+
+    $values = [
+      ':title' => $title,
+      ':description' => $description,
+      ':requirements' => $requirements !== '' ? $requirements : null,
+      ':skills_required' => $skills !== '' ? $skills : null,
+      ':salary' => $salary !== '' ? $salary : null,
+      ':job_type' => $jobType,
+      ':location' => $location !== '' ? $location : null,
+      ':work_mode' => $workMode,
+      ':vacancy_count' => $vacancyCount,
+      ':deadline' => $deadline !== '' ? $deadline : null,
+    ];
+
+    if ($jobId > 0) {
+      $stmt = $pdo->prepare('SELECT id FROM jobs WHERE id = :id AND company_id = :company_id LIMIT 1');
+      $stmt->execute([':id' => $jobId, ':company_id' => $companyId]);
+      if (!$stmt->fetch()) {
+        flash('Job not found, or you do not have permission to edit it.', 'error');
+        redirect('recruiter-dashboard.php?tab=jobs');
+      }
+
+      $stmt = $pdo->prepare(
+        'UPDATE jobs SET title = :title, description = :description, requirements = :requirements,
+                        skills_required = :skills_required, salary = :salary, job_type = :job_type,
+                        location = :location, work_mode = :work_mode, vacancy_count = :vacancy_count,
+                        deadline = :deadline
+         WHERE id = :id AND company_id = :company_id'
+      );
+      $stmt->execute($values + [':id' => $jobId, ':company_id' => $companyId]);
+      flash('Job updated successfully.');
+    } else {
+      $stmt = $pdo->prepare(
+        'INSERT INTO jobs (company_id, title, description, requirements, skills_required, salary,
+                                    job_type, location, work_mode, vacancy_count, deadline, status)
+                 VALUES (:company_id, :title, :description, :requirements, :skills_required, :salary,
+                         :job_type, :location, :work_mode, :vacancy_count, :deadline, "open")'
+      );
+      $stmt->execute($values + [':company_id' => $companyId]);
+      flash('Job posted successfully.');
+    }
+
+    redirect('recruiter-dashboard.php?tab=jobs');
+  }
+
+  // ---- Open / close / reopen a job ----
+  if ($action === 'toggle_status') {
+    $jobId = (int) ($_POST['job_id'] ?? 0);
+    $targetStatus = post('status') === 'open' ? 'open' : 'closed';
+    $newDeadline = post('deadline');
+
+    if ($targetStatus === 'open') {
+      if ($newDeadline === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $newDeadline)) {
+        flash('Please select a valid future application deadline date to reopen.', 'error');
+        redirect('recruiter-dashboard.php?tab=jobs&reopen=' . $jobId);
+      }
+      if (strtotime($newDeadline) < strtotime(date('Y-m-d'))) {
+        flash('The extended deadline date must be today or in the future.', 'error');
+        redirect('recruiter-dashboard.php?tab=jobs&reopen=' . $jobId);
+      }
+
+      $stmt = $pdo->prepare('UPDATE jobs SET status = "open", deadline = :deadline WHERE id = :id AND company_id = :company_id');
+      $stmt->execute([':deadline' => $newDeadline, ':id' => $jobId, ':company_id' => $companyId]);
+      flash('Job reopened successfully with extended deadline until ' . format_date($newDeadline) . '.');
+    } else {
+      $stmt = $pdo->prepare('UPDATE jobs SET status = "closed" WHERE id = :id AND company_id = :company_id');
+      $stmt->execute([':id' => $jobId, ':company_id' => $companyId]);
+      flash('Job closed.');
+    }
+    redirect('recruiter-dashboard.php?tab=jobs');
+  }
+
+  // ---- Delete a job ----
+  if ($action === 'delete_job') {
+    $jobId = (int) ($_POST['job_id'] ?? 0);
+
+    $stmt = $pdo->prepare('DELETE FROM jobs WHERE id = :id AND company_id = :company_id');
+    $stmt->execute([':id' => $jobId, ':company_id' => $companyId]);
+
+    if ($stmt->rowCount() === 0) {
+      flash('Job not found, or you do not have permission to delete it.', 'error');
+    } else {
+      flash('Job deleted.');
+    }
+    redirect('recruiter-dashboard.php?tab=jobs');
+  }
+
+  // ---- Update an applicant's status ----
+  if ($action === 'update_application') {
+    $applicationId = (int) ($_POST['application_id'] ?? 0);
+    $status = post('status');
+    $notes = post('notes');
+    $interviewAt = post('interview_at');
+
+    if (!isset(APPLICATION_STATUSES[$status])) {
+      flash('Invalid status value.', 'error');
+      redirect('recruiter-dashboard.php?tab=applicants');
+    }
+
+    $interviewValue = null;
+    if (!in_array($status, ['rejected', 'withdrawn'], true) && $interviewAt !== '') {
+      $ts = strtotime($interviewAt);
+      if ($ts === false) {
+        flash('Interview date is not a valid date and time.', 'error');
+        redirect('recruiter-dashboard.php?tab=applicants&review=' . $applicationId);
+      }
+      $interviewValue = date('Y-m-d H:i:s', $ts);
+    }
+
+    $stmt = $pdo->prepare(
+      'SELECT a.status, a.notes, a.interview_at
+             FROM applications a
+             INNER JOIN jobs j ON a.job_id = j.id
+             WHERE a.id = :id AND j.company_id = :company_id LIMIT 1'
+    );
+    $stmt->execute([':id' => $applicationId, ':company_id' => $companyId]);
+    $before = $stmt->fetch();
+
+
+
+    $stmt = $pdo->prepare(
+      'UPDATE applications a
+             INNER JOIN jobs j ON a.job_id = j.id
+             SET a.status = :status, a.notes = :notes, a.interview_at = :interview_at
+             WHERE a.id = :id AND j.company_id = :company_id'
+    );
+    $stmt->execute([
+      ':status' => $status,
+      ':notes' => $notes,
+      ':interview_at' => $interviewValue,
+      ':id' => $applicationId,
+      ':company_id' => $companyId,
+    ]);
+
+    $changed = [];
+    if ($before) {
+      if ($before['status'] !== $status) {
+        $changed[] = 'status';
+      }
+      if ((string) $before['interview_at'] !== (string) $interviewValue) {
+        $changed[] = 'interview';
+      }
+      if (trim((string) $before['notes']) !== trim($notes)) {
+        $changed[] = 'notes';
+      }
+    }
+
+    if ($changed) {
+      require_once __DIR__ . '/notifications.php';
+      notify_application_updated($pdo, $applicationId, $changed);
+      flash('Applicant updated. Notification email sent.');
+    } else {
+      flash('Applicant updated.');
+    }
+
+    redirect('recruiter-dashboard.php?tab=applicants');
+  }
+
+  // ---- Bulk Action on Candidates ----
+  if ($action === 'bulk_action') {
+    $appIds = $_POST['application_ids'] ?? [];
+    $bulkStatus = post('bulk_status');
+    $bulkNotes = post('bulk_notes');
+    $bulkInterviewAt = post('bulk_interview_at');
+
+    if (!is_array($appIds) || empty($appIds)) {
+      flash('Please select at least one candidate for bulk action.', 'error');
+      redirect('recruiter-dashboard.php?tab=applicants');
+    }
+    if (!isset(APPLICATION_STATUSES[$bulkStatus])) {
+      flash('Invalid status for bulk update.', 'error');
+      redirect('recruiter-dashboard.php?tab=applicants');
+    }
+
+    $interviewValue = null;
+    if (!in_array($bulkStatus, ['rejected', 'withdrawn'], true) && $bulkInterviewAt !== '') {
+      $ts = strtotime($bulkInterviewAt);
+      if ($ts !== false) {
+        $interviewValue = date('Y-m-d H:i:s', $ts);
+      }
+    }
+
+    $cleanIds = array_map('intval', $appIds);
+    $hasNotes = $bulkNotes !== '' ? 1 : 0;
+    $hasInterview = $interviewValue !== null ? 1 : 0;
+
+    $inPlaceholders = [];
+    $execParams = [
+      ':status' => $bulkStatus,
+      ':has_notes' => $hasNotes,
+      ':notes' => $bulkNotes,
+      ':has_interview' => $hasInterview,
+      ':interview_at' => $interviewValue,
+      ':company_id' => $companyId,
+    ];
+
+    foreach ($cleanIds as $idx => $id) {
+      $pName = ':id_' . $idx;
+      $inPlaceholders[] = $pName;
+      $execParams[$pName] = $id;
+    }
+
+    // Find matching application IDs for this recruiter's company
+    $stmtValid = $pdo->prepare(
+      "SELECT a.id FROM applications a
+       INNER JOIN jobs j ON a.job_id = j.id
+       WHERE a.id IN ({$inClause}) AND j.company_id = :company_id"
+    );
+    $stmtValid->execute([':company_id' => $companyId] + array_combine($inPlaceholders, $cleanIds));
+    $validIds = $stmtValid->fetchAll(PDO::FETCH_COLUMN);
+
+    if (!empty($validIds)) {
+      $stmt = $pdo->prepare(
+        "UPDATE applications a
+         INNER JOIN jobs j ON a.job_id = j.id
+         SET a.status = :status,
+             a.notes = CASE WHEN :has_notes = 1 THEN :notes ELSE a.notes END,
+             a.interview_at = CASE WHEN :has_interview = 1 THEN :interview_at ELSE a.interview_at END
+         WHERE a.id IN ({$inClause}) AND j.company_id = :company_id"
+      );
+      $stmt->execute($execParams);
+
+      require_once __DIR__ . '/notifications.php';
+      foreach ($validIds as $appId) {
+        $changed = ['status'];
+        if ($hasNotes) $changed[] = 'notes';
+        if ($hasInterview) $changed[] = 'interview';
+        notify_application_updated($pdo, (int) $appId, $changed);
+      }
+
+      $count = count($validIds);
+      flash("Bulk update complete: {$count} candidate(s) updated and notification emails queued.");
+    } else {
+      flash('No matching candidates found for update.', 'error');
+    }
+
+    redirect('recruiter-dashboard.php?tab=applicants');
+  }
+
+  redirect('recruiter-dashboard.php');
+}
+
+// ---------------------------------------------------------------
+// GET: Fetch Dashboard Data
 // ---------------------------------------------------------------
 $stmt = $pdo->prepare(
-    'SELECT COUNT(*) AS total_jobs,
+  'SELECT COUNT(*) AS total_jobs,
             SUM(CASE WHEN status = "open" THEN 1 ELSE 0 END) AS active_jobs,
             SUM(CASE WHEN status = "closed" THEN 1 ELSE 0 END) AS closed_jobs
      FROM jobs WHERE company_id = :company_id'
@@ -248,7 +355,7 @@ $stmt->execute([':company_id' => $companyId]);
 $jobStats = $stmt->fetch() ?: [];
 
 $stmt = $pdo->prepare(
-    'SELECT COUNT(*) AS total_applicants,
+  'SELECT COUNT(*) AS total_applicants,
             SUM(CASE WHEN a.status IN ("applied", "under_review") THEN 1 ELSE 0 END) AS pending_reviews,
             SUM(CASE WHEN a.status = "hired" THEN 1 ELSE 0 END) AS hired_candidates
      FROM applications a
@@ -258,18 +365,9 @@ $stmt = $pdo->prepare(
 $stmt->execute([':company_id' => $companyId]);
 $appStats = $stmt->fetch() ?: [];
 
-$totalApplicants = (int) ($appStats['total_applicants'] ?? 0);
-$hiredCandidates = (int) ($appStats['hired_candidates'] ?? 0);
-$hireRate = $totalApplicants > 0 ? (int) round($hiredCandidates / $totalApplicants * 100) : 0;
-
-$donutCircumference = 251.2;
-$donutOffset = $donutCircumference - ($donutCircumference * $hireRate / 100);
-
-// ---------------------------------------------------------------
-// Jobs
-// ---------------------------------------------------------------
+// Jobs list
 $stmt = $pdo->prepare(
-    'SELECT j.*, (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applicant_count
+  'SELECT j.*, (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applicant_count
      FROM jobs j
      WHERE j.company_id = :company_id
      ORDER BY j.created_at DESC'
@@ -277,9 +375,7 @@ $stmt = $pdo->prepare(
 $stmt->execute([':company_id' => $companyId]);
 $jobs = $stmt->fetchAll();
 
-// ---------------------------------------------------------------
-// Applicants (with filters)
-// ---------------------------------------------------------------
+// Applicants list with filters
 $filterJobId = (int) query('job_id');
 $filterStatus = query('status');
 
@@ -287,356 +383,913 @@ $where = ['j.company_id = :company_id'];
 $params = [':company_id' => $companyId];
 
 if ($filterJobId > 0) {
-    $where[] = 'a.job_id = :job_id';
-    $params[':job_id'] = $filterJobId;
+  $where[] = 'a.job_id = :job_id';
+  $params[':job_id'] = $filterJobId;
 }
 if (isset(APPLICATION_STATUSES[$filterStatus])) {
-    $where[] = 'a.status = :status';
-    $params[':status'] = $filterStatus;
+  $where[] = 'a.status = :status';
+  $params[':status'] = $filterStatus;
 } else {
-    $filterStatus = '';
+  $filterStatus = '';
 }
 
 $whereSql = implode(' AND ', $where);
 
 $stmt = $pdo->prepare(
-    "SELECT a.id AS application_id, a.status, a.notes, a.applied_at, a.interview_at,
-            j.title AS job_title,
+  "SELECT a.id AS application_id, a.status, a.notes, a.applied_at, a.interview_at,
+            j.title AS job_title, j.skills_required,
             u.full_name, u.email, u.phone,
             sp.education, sp.skills, sp.bio, sp.resume_path, sp.resume_original_name
      FROM applications a
      INNER JOIN jobs j ON a.job_id = j.id
      INNER JOIN users u ON a.student_id = u.id
      LEFT JOIN student_profiles sp ON sp.user_id = u.id
-     WHERE $whereSql
+     WHERE {$whereSql}
      ORDER BY a.applied_at DESC"
 );
 $stmt->execute($params);
 $applicants = $stmt->fetchAll();
 
-// Unfiltered set feeds the pipeline board, so filters only affect the table.
-$stmt = $pdo->prepare(
-    'SELECT a.id AS application_id, a.status, a.applied_at, a.interview_at,
-            j.title AS job_title, u.full_name
-     FROM applications a
-     INNER JOIN jobs j ON a.job_id = j.id
-     INNER JOIN users u ON a.student_id = u.id
-     WHERE j.company_id = :company_id
-     ORDER BY a.applied_at DESC'
-);
-$stmt->execute([':company_id' => $companyId]);
-$pipeline = [];
-foreach (array_keys(APPLICATION_STATUSES) as $key) {
-    $pipeline[$key] = [];
-}
-foreach ($stmt->fetchAll() as $row) {
-    if (isset($pipeline[$row['status']])) {
-        $pipeline[$row['status']][] = $row;
+// Map Candidates Data
+$candidateItems = [];
+foreach ($applicants as $app) {
+    $matchScore = calculate_match_score($app['skills'] ?? '', $app['skills_required'] ?? '');
+    
+    $badgeClass = match ($app['status']) {
+        'under_review' => 'badge-sky',
+        'shortlisted' => 'badge-purple',
+        'hired' => 'badge-emerald',
+        'rejected', 'withdrawn' => 'badge-rose',
+        default => 'badge-dark',
+    };
+    
+    $nextStep = 'Pending Review';
+    if (!empty($app['interview_at'])) {
+        $nextStep = 'Interview: ' . format_datetime($app['interview_at']);
+    } elseif ($app['status'] === 'hired') {
+        $nextStep = 'Onboarding Scheduled';
+    } elseif ($app['status'] === 'rejected') {
+        $nextStep = 'Rejection Email Sent';
+    } elseif ($app['status'] === 'shortlisted') {
+        $nextStep = 'Shortlisted for Screening';
     }
+
+    $candidateItems[] = [
+        'id' => $app['application_id'],
+        'name' => $app['full_name'],
+        'email' => $app['email'],
+        'initials' => initials($app['full_name']),
+        'role' => $app['job_title'],
+        'applied' => 'Applied ' . format_date($app['applied_at']),
+        'stage' => status_label($app['status']),
+        'raw_status' => $app['status'],
+        'stage_badge' => $badgeClass,
+        'exp' => !empty($app['education']) ? $app['education'] : 'Applicant',
+        'match' => $matchScore . '% Match',
+        'next_step' => $nextStep,
+        'action' => in_array($app['status'], ['rejected', 'withdrawn'], true) ? 'View Notes' : 'Review',
+    ];
 }
 
 $interviews = upcoming_interviews($pdo);
 
-// ---------------------------------------------------------------
-// Tab / dialog state
-// ---------------------------------------------------------------
+// Tab & Modal State
 $tab = match (query('tab')) {
-    'jobs' => 'jobs',
-    'applicants' => 'applicants',
-    default => 'pipeline',
+  'jobs' => 'jobs',
+  'applicants' => 'applicants',
+  default => 'pipeline',
 };
 
 $applicantsUrl = 'recruiter-dashboard.php?tab=applicants'
-    . ($filterJobId > 0 ? '&job_id=' . $filterJobId : '')
-    . ($filterStatus !== '' ? '&status=' . urlencode($filterStatus) : '');
+  . ($filterJobId > 0 ? '&job_id=' . $filterJobId : '')
+  . ($filterStatus !== '' ? '&status=' . urlencode($filterStatus) : '');
 
 $editJob = null;
 $showJobDialog = isset($_GET['new']);
 if (isset($_GET['edit'])) {
-    $editId = (int) $_GET['edit'];
-    foreach ($jobs as $job) {
-        if ((int) $job['id'] === $editId) {
-            $editJob = $job;
-            $showJobDialog = true;
-            $tab = 'jobs';
-            break;
-        }
+  $editId = (int) $_GET['edit'];
+  foreach ($jobs as $job) {
+    if ((int) $job['id'] === $editId) {
+      $editJob = $job;
+      $showJobDialog = true;
+      $tab = 'jobs';
+      break;
     }
+  }
+}
+
+$reopenJob = null;
+if (isset($_GET['reopen'])) {
+  $reopenId = (int) $_GET['reopen'];
+  foreach ($jobs as $job) {
+    if ((int) $job['id'] === $reopenId) {
+      $reopenJob = $job;
+      $tab = 'jobs';
+      break;
+    }
+  }
 }
 
 $reviewApplicant = null;
 if (isset($_GET['review'])) {
-    $reviewId = (int) $_GET['review'];
-    foreach ($applicants as $applicant) {
-        if ((int) $applicant['application_id'] === $reviewId) {
-            if (!in_array($applicant['status'], ['rejected', 'withdrawn'], true)) {
-                $reviewApplicant = $applicant;
-                $tab = 'applicants';
-            }
-            break;
-        }
+  $reviewId = (int) $_GET['review'];
+  foreach ($applicants as $applicant) {
+    if ((int) $applicant['application_id'] === $reviewId) {
+      $reviewApplicant = $applicant;
+      $tab = 'applicants';
+      break;
     }
+  }
 }
 
 $formError = take_error();
 $formOld = take_old();
 
+$totalApplicants = (int) ($appStats['total_applicants'] ?? 0);
+$hiredCandidates = (int) ($appStats['hired_candidates'] ?? 0);
+$hireRate = $totalApplicants > 0 ? round(($hiredCandidates / $totalApplicants) * 100, 1) : 0;
+
 $pageTitle = 'Recruiter Dashboard';
-$topbarTitle = $company['company_name'] . ' · Hiring';
+$topbarTitle = $company['company_name'] . ' · Hiring Pipeline';
 $activeNav = match ($tab) {
-    'jobs' => 'myjobs',
-    'applicants' => 'applicants',
-    default => 'dashboard',
+  'jobs' => 'myjobs',
+  'applicants' => 'applicants',
+  default => 'dashboard',
 };
 $layout = 'app';
+
 require __DIR__ . '/header.php';
 ?>
 
+<style>
+/* Modern Recruiter Dashboard Custom Styles */
+:root {
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  
+  --sky-50: #f0f9ff;
+  --sky-100: #e0f2fe;
+  --sky-700: #0369a1;
+  
+  --purple-50: #faf5ff;
+  --purple-100: #f3e8ff;
+  --purple-700: #6b21a8;
+  
+  --emerald-50: #ecfdf5;
+  --emerald-100: #d1fae5;
+  --emerald-700: #047857;
+  
+  --rose-50: #fff1f2;
+  --rose-100: #ffe4e6;
+  --rose-700: #be123c;
+}
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 0.5rem 0;
+}
+
+.page-header-rec {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.page-title-rec {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--slate-900);
+  margin: 0;
+}
+
+.page-subtitle-rec {
+  font-size: 0.875rem;
+  color: var(--slate-500);
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.header-actions-rec {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.btn-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.btn-rec-primary {
+  background-color: var(--brand-600);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25);
+}
+.btn-rec-primary:hover {
+  background-color: var(--brand-700);
+}
+
+.btn-rec-secondary {
+  background-color: #ffffff;
+  color: var(--slate-700);
+  border: 1px solid var(--slate-200);
+}
+.btn-rec-secondary:hover {
+  background-color: var(--slate-50);
+}
+
+.metrics-grid-rec {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1rem;
+}
+
+.metric-card-rec {
+  background-color: #ffffff;
+  border-radius: 1rem;
+  padding: 1.25rem 1rem;
+  border: 1px solid var(--slate-200);
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.metric-value-rec {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--slate-900);
+  line-height: 1;
+}
+
+.metric-label-rec {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.5rem;
+}
+
+.card-rec {
+  background-color: #ffffff;
+  border-radius: 1rem;
+  border: 1px solid var(--slate-200);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+
+.table-header-nav-rec {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--slate-200);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.tab-menu-rec {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tab-item-rec {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--slate-500);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.tab-item-rec:hover {
+  color: var(--slate-800);
+  background: var(--slate-100);
+}
+.tab-item-rec.active {
+  background: var(--slate-900);
+  color: #ffffff;
+}
+
+.filter-pills-rec {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.pill-rec {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--slate-600);
+  background: var(--slate-100);
+  border: 1px solid var(--slate-200);
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.pill-rec:hover { background: var(--slate-200); }
+.pill-rec.pill-dark { background: var(--slate-900); color: #ffffff; border-color: var(--slate-900); }
+.pill-rec.pill-sky { background: var(--sky-100); color: var(--sky-700); border-color: var(--sky-100); }
+.pill-rec.pill-purple { background: var(--purple-100); color: var(--purple-700); border-color: var(--purple-100); }
+.pill-rec.pill-emerald { background: var(--emerald-100); color: var(--emerald-700); border-color: var(--emerald-100); }
+.pill-rec.pill-rose { background: var(--rose-100); color: var(--rose-700); border-color: var(--rose-100); }
+
+.table-toolbar-rec {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1.5rem;
+  background: var(--slate-50);
+  border-bottom: 1px solid var(--slate-200);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.search-box-rec {
+  position: relative;
+  flex: 1;
+  min-width: 240px;
+}
+.search-box-rec input {
+  width: 100%;
+  padding: 0.5rem 0.875rem 0.5rem 2.25rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--slate-200);
+  font-size: 0.875rem;
+  outline: none;
+}
+.search-box-rec input:focus {
+  border-color: var(--brand-600);
+}
+.search-icon-rec {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--slate-400);
+}
+
+.filter-controls-rec {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.select-control-rec {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--slate-200);
+  font-size: 0.875rem;
+  background: #ffffff;
+  color: var(--slate-700);
+  outline: none;
+}
+
+.data-table-rec {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  text-align: left;
+}
+.data-table-rec th {
+  padding: 0.75rem 1.25rem;
+  background: var(--slate-50);
+  color: var(--slate-500);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--slate-200);
+}
+.data-table-rec td {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--slate-100);
+  vertical-align: middle;
+}
+.data-table-rec tr:hover {
+  background-color: rgba(248, 250, 252, 0.7);
+}
+
+.candidate-profile-rec {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+.avatar-circle-rec {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--slate-800);
+  background: var(--slate-200);
+}
+.candidate-name-rec {
+  font-weight: 600;
+  color: var(--slate-900);
+}
+.candidate-email-rec {
+  font-size: 0.75rem;
+  color: var(--slate-500);
+}
+
+.badge-rec {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  gap: 0.375rem;
+}
+.badge-rec.badge-sky { background: var(--sky-100); color: var(--sky-700); }
+.badge-rec.badge-purple { background: var(--purple-100); color: var(--purple-700); }
+.badge-rec.badge-emerald { background: var(--emerald-100); color: var(--emerald-700); }
+.badge-rec.badge-rose { background: var(--rose-100); color: var(--rose-700); }
+.badge-rec.badge-dark { background: var(--slate-900); color: #ffffff; }
+
+.badge-dot-rec {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.text-bold-rec { font-weight: 600; color: var(--slate-900); }
+.text-match-rec { font-size: 0.75rem; font-weight: 700; color: var(--emerald-700); }
+.tag-role-rec { font-weight: 600; color: var(--slate-800); }
+.text-subtle-rec { font-size: 0.75rem; color: var(--slate-500); }
+.next-step-tag-rec {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--slate-600);
+  background: var(--slate-100);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+}
+
+.bottom-grid-rec {
+  display: flex;
+  gap: 1.5rem;
+}
+.flex-1-rec { flex: 1; }
+.flex-2-rec { flex: 2; }
+
+.widget-card-rec {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.widget-header-rec {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+.widget-title-rec {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--slate-900);
+  margin: 0;
+}
+.widget-subtitle-rec {
+  font-size: 0.75rem;
+  color: var(--slate-500);
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.empty-state-rec {
+  text-align: center;
+  padding: 2rem 1rem;
+  background: var(--slate-50);
+  border-radius: 0.75rem;
+  border: 1px dashed var(--slate-200);
+}
+.empty-icon-rec {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0 auto 0.75rem auto;
+  color: var(--slate-400);
+}
+.empty-title-rec {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--slate-800);
+  margin-bottom: 0.25rem;
+}
+.empty-description-rec {
+  font-size: 0.75rem;
+  color: var(--slate-500);
+  margin-bottom: 1rem;
+}
+
+.stat-highlight-rec {
+  margin: 1rem 0 0.5rem 0;
+}
+.stat-number-rec {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--slate-900);
+}
+.stat-meta-rec {
+  font-size: 0.75rem;
+  color: var(--slate-500);
+  margin-left: 0.5rem;
+}
+
+.progress-bar-bg-rec {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--slate-100);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+.progress-bar-fill-rec {
+  height: 100%;
+  background: var(--emerald-500);
+  border-radius: 9999px;
+}
+
+.widget-footer-rec {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--slate-500);
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--slate-100);
+}
+
+@media (max-width: 1024px) {
+  .metrics-grid-rec { grid-template-columns: repeat(3, 1fr); }
+  .bottom-grid-rec { flex-direction: column; }
+}
+@media (max-width: 640px) {
+  .metrics-grid-rec { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+
 <main class="canvas">
-
-  <div class="canvas-header">
-    <div>
-      <h2 class="canvas-title">Hiring Pipeline</h2>
-      <p class="canvas-sub">Move candidates through your stages and schedule interviews.</p>
-    </div>
-    <div class="canvas-actions">
-      <a href="export.php" class="btn btn-secondary"><?= nav_icon('export') ?> Export CSV</a>
-      <a href="recruiter-dashboard.php?new=1" class="btn btn-primary"><?= nav_icon('add') ?> Post a Job</a>
-    </div>
-  </div>
-
-  <div class="stat-strip">
-    <div class="stat-chip"><span class="stat-chip-value"><?= (int) ($jobStats['total_jobs'] ?? 0) ?></span><span class="stat-chip-label">Total Jobs</span></div>
-    <div class="stat-chip"><span class="stat-chip-value"><?= (int) ($jobStats['active_jobs'] ?? 0) ?></span><span class="stat-chip-label">Active</span></div>
-    <div class="stat-chip"><span class="stat-chip-value"><?= (int) ($jobStats['closed_jobs'] ?? 0) ?></span><span class="stat-chip-label">Closed</span></div>
-    <div class="stat-chip"><span class="stat-chip-value"><?= $totalApplicants ?></span><span class="stat-chip-label">Applicants</span></div>
-    <div class="stat-chip"><span class="stat-chip-value"><?= (int) ($appStats['pending_reviews'] ?? 0) ?></span><span class="stat-chip-label">To Review</span></div>
-    <div class="stat-chip"><span class="stat-chip-value"><?= $hiredCandidates ?></span><span class="stat-chip-label">Hired</span></div>
-  </div>
-
-  <div class="tabs">
-    <a class="tab-btn<?= $tab === 'pipeline' ? ' active' : '' ?>" href="recruiter-dashboard.php">Pipeline</a>
-    <a class="tab-btn<?= $tab === 'jobs' ? ' active' : '' ?>" href="recruiter-dashboard.php?tab=jobs">My Jobs</a>
-    <a class="tab-btn<?= $tab === 'applicants' ? ' active' : '' ?>" href="recruiter-dashboard.php?tab=applicants">Applicants</a>
-  </div>
-
-  <?php if ($tab === 'pipeline'): ?>
-    <!-- ---------- Pipeline board ---------- -->
-    <?php if (!$totalApplicants): ?>
-      <div class="card">
-        <div class="empty-state">
-          No applicants yet.
-          <?php if (!($jobStats['total_jobs'] ?? 0)): ?>
-            <a href="recruiter-dashboard.php?new=1">Post your first job</a> to start receiving applications.
-          <?php else: ?>
-            Share your open roles to start receiving applications.
-          <?php endif; ?>
+    <div class="dashboard-container">
+        <!-- Page Header -->
+        <div class="page-header-rec">
+            <div>
+                <h1 class="page-title-rec">Hiring Pipeline</h1>
+                <p class="page-subtitle-rec">Move candidates through your stages and schedule interviews in structured view.</p>
+            </div>
+            <div class="header-actions-rec">
+                <a href="export.php" class="btn-rec btn-rec-secondary">
+                    <svg style="width: 1rem; height: 1rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                    Export CSV
+                </a>
+                <a href="recruiter-dashboard.php?new=1" class="btn-rec btn-rec-primary">
+                    <svg style="width: 1rem; height: 1rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                    Post a Job
+                </a>
+            </div>
         </div>
-      </div>
-    <?php else: ?>
-      <div class="board">
-        <?php foreach (APPLICATION_STATUSES as $key => $label): ?>
-          <section class="board-col<?= $key === 'shortlisted' ? ' board-col-accent' : '' ?>">
-            <div class="board-col-head">
-              <h3><?= e($label) ?> <span class="board-count"><?= count($pipeline[$key]) ?></span></h3>
-            </div>
-            <div class="board-col-body">
-              <?php if (!$pipeline[$key]): ?>
-                <p class="board-empty">Nothing here yet.</p>
-              <?php endif; ?>
 
-              <?php foreach ($pipeline[$key] as $row): ?>
-                <article class="board-card<?= $key === 'shortlisted' ? ' board-card-accent' : '' ?>">
-                  <div class="board-card-company"><?= e($row['job_title']) ?></div>
-                  <h4 class="board-card-title">
-                    <?php if (!in_array($row['status'], ['rejected', 'withdrawn'], true)): ?>
-                      <a href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $row['application_id'] ?>">
-                        <?= e($row['full_name']) ?>
-                      </a>
+        <!-- Metric KPI Cards -->
+        <section class="metrics-grid-rec">
+            <div class="metric-card-rec">
+                <div class="metric-value-rec"><?= (int) ($jobStats['total_jobs'] ?? 0) ?></div>
+                <div class="metric-label-rec">Total Jobs</div>
+            </div>
+            <div class="metric-card-rec">
+                <div class="metric-value-rec"><?= (int) ($jobStats['active_jobs'] ?? 0) ?></div>
+                <div class="metric-label-rec">Active</div>
+            </div>
+            <div class="metric-card-rec">
+                <div class="metric-value-rec"><?= (int) ($jobStats['closed_jobs'] ?? 0) ?></div>
+                <div class="metric-label-rec">Closed</div>
+            </div>
+            <div class="metric-card-rec">
+                <div class="metric-value-rec"><?= $totalApplicants ?></div>
+                <div class="metric-label-rec">Applicants</div>
+            </div>
+            <div class="metric-card-rec">
+                <div class="metric-value-rec"><?= (int) ($appStats['pending_reviews'] ?? 0) ?></div>
+                <div class="metric-label-rec">To Review</div>
+            </div>
+            <div class="metric-card-rec">
+                <div class="metric-value-rec"><?= $hiredCandidates ?></div>
+                <div class="metric-label-rec">Hired</div>
+            </div>
+        </section>
+
+        <!-- Main Card Section (Table / Jobs) -->
+        <div class="card-rec">
+            <div class="table-header-nav-rec">
+                <nav class="tab-menu-rec">
+                    <a href="recruiter-dashboard.php?tab=pipeline" class="tab-item-rec <?= $tab === 'pipeline' ? 'active' : '' ?>">Pipeline Table</a>
+                    <a href="recruiter-dashboard.php?tab=jobs" class="tab-item-rec <?= $tab === 'jobs' ? 'active' : '' ?>">My Jobs</a>
+                    <a href="recruiter-dashboard.php?tab=applicants" class="tab-item-rec <?= $tab === 'applicants' ? 'active' : '' ?>">All Applicants</a>
+                </nav>
+                <div class="filter-pills-rec">
+                    <a href="recruiter-dashboard.php?tab=applicants" class="pill-rec <?= $filterStatus === '' ? 'pill-dark' : '' ?>">All (<?= count($candidateItems) ?>)</a>
+                    <a href="recruiter-dashboard.php?tab=applicants&status=applied" class="pill-rec <?= $filterStatus === 'applied' ? 'pill-dark' : '' ?>">Applied</a>
+                    <a href="recruiter-dashboard.php?tab=applicants&status=under_review" class="pill-rec pill-sky">Under Review</a>
+                    <a href="recruiter-dashboard.php?tab=applicants&status=shortlisted" class="pill-rec pill-purple">Shortlisted</a>
+                    <a href="recruiter-dashboard.php?tab=applicants&status=hired" class="pill-rec pill-emerald">Hired</a>
+                    <a href="recruiter-dashboard.php?tab=applicants&status=rejected" class="pill-rec pill-rose">Rejected</a>
+                </div>
+            </div>
+
+            <?php if ($tab === 'jobs'): ?>
+                <!-- ---------- Jobs Table ---------- -->
+                <div style="padding: 1rem 1.5rem;">
+                    <?php if (empty($jobs)): ?>
+                        <p style="text-align:center; padding: 2rem 0; color: var(--slate-500);">No jobs posted yet. Click <strong>Post a Job</strong> to get started.</p>
                     <?php else: ?>
-                      <?= e($row['full_name']) ?>
-                    <?php endif; ?>
-                  </h4>
+                        <table class="data-table-rec">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Type & Mode</th>
+                                    <th>Status</th>
+                                    <th>Applicants</th>
+                                    <th>Deadline</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($jobs as $job): ?>
+                                    <tr>
+                                        <td>
+                                            <div class="candidate-name-rec"><?= e($job['title']) ?></div>
+                                            <div class="candidate-email-rec"><?= e($job['location'] ?: 'Remote') ?> • <?= e($job['salary'] ?: 'Competitive') ?></div>
+                                        </td>
+                                        <td>
+                                            <span class="tag-role-rec"><?= e(ucfirst($job['job_type'])) ?></span>
+                                            <div class="text-subtle-rec"><?= e(ucfirst($job['work_mode'])) ?></div>
+                                        </td>
+                                        <td>
+                                            <span class="badge-rec <?= $job['status'] === 'open' ? 'badge-emerald' : 'badge-rose' ?>">
+                                                <span class="badge-dot-rec"></span>
+                                                <?= e(ucfirst($job['status'])) ?>
+                                            </span>
+                                        </td>
+                                        <td class="text-bold-rec"><?= (int) $job['applicant_count'] ?></td>
+                                        <td class="text-subtle-rec"><?= $job['deadline'] ? format_date($job['deadline']) : 'Open' ?></td>
+                                        <td>
+                                            <div style="display: flex; gap: 0.5rem;">
+                                                <a class="btn-rec btn-rec-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" href="recruiter-dashboard.php?edit=<?= (int) $job['id'] ?>">Edit</a>
 
-                  <?php if ($row['interview_at'] && strtotime($row['interview_at']) >= time() && !in_array($row['status'], ['rejected', 'withdrawn'], true)): ?>
-                    <div class="board-card-note">Interview <?= e(format_datetime($row['interview_at'])) ?></div>
-                  <?php endif; ?>
+                                                <?php if ($job['status'] === 'open'): ?>
+                                                    <form method="post" action="recruiter-dashboard.php">
+                                                        <?= csrf_field() ?>
+                                                        <input type="hidden" name="action" value="toggle_status">
+                                                        <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                                                        <input type="hidden" name="status" value="closed">
+                                                        <button type="submit" class="btn-rec btn-rec-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">Close</button>
+                                                    </form>
+                                                <?php else: ?>
+                                                    <a class="btn-rec btn-rec-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" href="recruiter-dashboard.php?tab=jobs&reopen=<?= (int) $job['id'] ?>">Reopen</a>
+                                                <?php endif; ?>
 
-                  <div class="board-card-foot">
-                    <span class="badge badge-<?= e($row['status']) ?>"><?= e(status_label($row['status'])) ?></span>
-                    <?php if (!in_array($row['status'], ['rejected', 'withdrawn'], true)): ?>
-                      <a class="btn btn-secondary btn-sm"
-                         href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $row['application_id'] ?>">Review</a>
+                                                <form method="post" action="recruiter-dashboard.php" onsubmit="return confirm('Delete this job permanently?');">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="delete_job">
+                                                    <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                                                    <button type="submit" class="btn-rec btn-rec-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; color: var(--rose-700);">Delete</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     <?php endif; ?>
-                  </div>
-                </article>
-              <?php endforeach; ?>
+                </div>
+
+            <?php else: ?>
+                <!-- ---------- Candidates / Pipeline Table ---------- -->
+                <div class="table-toolbar-rec">
+                    <div class="search-box-rec">
+                        <svg class="search-icon-rec" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                        <input type="text" id="candidateSearch" placeholder="Search candidate by name, role, skills..."/>
+                    </div>
+                    <form method="get" action="recruiter-dashboard.php" class="filter-controls-rec">
+                        <input type="hidden" name="tab" value="<?= e($tab) ?>">
+                        <select name="job_id" class="select-control-rec" onchange="this.form.submit()">
+                            <option value="">All Job Roles</option>
+                            <?php foreach ($jobs as $job): ?>
+                                <option value="<?= (int) $job['id'] ?>" <?= $filterJobId === (int) $job['id'] ? 'selected' : '' ?>>
+                                    <?= e($job['title']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <select name="status" class="select-control-rec" onchange="this.form.submit()">
+                            <option value="">Filter Stage: All</option>
+                            <?php foreach (APPLICATION_STATUSES as $val => $lbl): ?>
+                                <option value="<?= e($val) ?>" <?= $filterStatus === $val ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </form>
+                </div>
+
+                <form method="post" action="recruiter-dashboard.php" id="bulkActionForm">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="bulk_action">
+                    <input type="hidden" name="bulk_status" id="bulkStatusInput" value="">
+                    <input type="hidden" name="bulk_interview_at" id="bulkInterviewInput" value="">
+                    <input type="hidden" name="bulk_notes" id="bulkNotesInput" value="">
+
+                    <div style="overflow-x: auto;">
+                        <?php if (empty($candidateItems)): ?>
+                            <p style="text-align:center; padding: 2.5rem 0; color: var(--slate-500);">No candidates found matching criteria.</p>
+                        <?php else: ?>
+                            <table class="data-table-rec">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;"><input type="checkbox" id="selectAllCandidates"/></th>
+                                        <th>Candidate</th>
+                                        <th>Role Applied</th>
+                                        <th>Current Stage</th>
+                                        <th>Match &amp; Education</th>
+                                        <th>Next Step</th>
+                                        <th style="text-align: right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($candidateItems as $candidate): ?>
+                                    <tr>
+                                        <td><input type="checkbox" name="application_ids[]" value="<?= (int) $candidate['id'] ?>" class="candidate-checkbox"/></td>
+                                        <td>
+                                            <div class="candidate-profile-rec">
+                                                <div class="avatar-circle-rec">
+                                                    <?= e($candidate['initials']) ?>
+                                                </div>
+                                                <div>
+                                                    <div class="candidate-name-rec"><?= e($candidate['name']) ?></div>
+                                                    <div class="candidate-email-rec"><?= e($candidate['email']) ?></div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="tag-role-rec"><?= e($candidate['role']) ?></span>
+                                            <div class="text-subtle-rec"><?= e($candidate['applied']) ?></div>
+                                        </td>
+                                        <td>
+                                            <span class="badge-rec <?= e($candidate['stage_badge']) ?>">
+                                                <span class="badge-dot-rec"></span>
+                                                <?= e($candidate['stage']) ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="text-bold-rec"><?= e($candidate['exp']) ?></div>
+                                            <div class="text-match-rec"><?= e($candidate['match']) ?></div>
+                                        </td>
+                                        <td>
+                                            <span class="next-step-tag-rec"><?= e($candidate['next_step']) ?></span>
+                                        </td>
+                                        <td style="text-align: right;">
+                                            <a class="btn-rec btn-rec-secondary" style="padding: 0.35rem 0.875rem; font-size: 0.75rem;" 
+                                               href="recruiter-dashboard.php?tab=applicants&review=<?= (int) $candidate['id'] ?>">
+                                                <?= e($candidate['action']) ?>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Floating Bulk Action Toolbar -->
+                    <div id="bulkActionBar" style="display: none; align-items: center; justify-content: space-between; padding: 0.875rem 1.5rem; background: var(--slate-900); color: #ffffff; border-radius: 0.75rem; margin: 1rem; box-shadow: 0 4px 14px rgba(15,23,42,0.25);">
+                        <div style="font-weight: 600; font-size: 0.875rem;">
+                            <span id="selectedCount" style="color: var(--brand-400); font-weight: 800; font-size: 1rem;">0</span> candidates selected
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button type="button" onclick="submitBulkAction('shortlisted')" class="btn-rec" style="background: var(--purple-700); color: #fff; font-size: 0.75rem; padding: 0.4rem 0.875rem;">
+                                🟣 Bulk Shortlist
+                            </button>
+                            <button type="button" onclick="submitBulkAction('under_review')" class="btn-rec" style="background: var(--sky-700); color: #fff; font-size: 0.75rem; padding: 0.4rem 0.875rem;">
+                                🔵 Under Review
+                            </button>
+                            <button type="button" onclick="submitBulkAction('hired')" class="btn-rec" style="background: var(--emerald-700); color: #fff; font-size: 0.75rem; padding: 0.4rem 0.875rem;">
+                                🟢 Bulk Hire
+                            </button>
+                            <button type="button" onclick="submitBulkAction('rejected')" class="btn-rec" style="background: var(--rose-700); color: #fff; font-size: 0.75rem; padding: 0.4rem 0.875rem;">
+                                ❌ Bulk Reject
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            <?php endif; ?>
+        </div>
+
+        <!-- Bottom Analytics Grid -->
+        <section class="bottom-grid-rec">
+            <!-- Upcoming Interviews Widget -->
+            <div class="card-rec widget-card-rec flex-2-rec">
+                <div class="widget-header-rec">
+                    <div>
+                        <h3 class="widget-title-rec">Upcoming Interviews</h3>
+                        <p class="widget-subtitle-rec">Schedule interviews directly from candidate review panel</p>
+                    </div>
+                </div>
+                
+                <?php if (empty($interviews)): ?>
+                    <div class="empty-state-rec">
+                        <div class="empty-icon-rec">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                        </div>
+                        <div class="empty-title-rec">No interviews scheduled for today</div>
+                        <p class="empty-description-rec">Assign an interview slot in candidate review modal to track technical rounds.</p>
+                        <a href="recruiter-dashboard.php?tab=applicants" class="btn-rec btn-rec-secondary" style="font-size: 0.75rem; display: inline-flex;">+ Review Applicants</a>
+                    </div>
+                <?php else: ?>
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <?php foreach ($interviews as $inv): ?>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--slate-50); border-radius: 0.75rem; border: 1px solid var(--slate-200);">
+                                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                    <div class="avatar-circle-rec"><?= e(initials($inv['full_name'])) ?></div>
+                                    <div>
+                                        <div class="candidate-name-rec"><?= e($inv['full_name']) ?></div>
+                                        <div class="text-subtle-rec"><?= e($inv['job_title']) ?></div>
+                                    </div>
+                                </div>
+                                <span class="badge-rec badge-sky">📅 <?= e(format_datetime($inv['interview_at'])) ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
-          </section>
-        <?php endforeach; ?>
-      </div>
-    <?php endif; ?>
 
-  <?php elseif ($tab === 'jobs'): ?>
-    <!-- ---------- Jobs table ---------- -->
-    <div class="card">
-      <?php if (!$jobs): ?>
-        <div class="empty-state">You haven't posted any jobs yet.</div>
-      <?php else: ?>
-        <table>
-          <thead>
-            <tr><th>Title</th><th>Type</th><th>Status</th><th>Applicants</th><th>Posted</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            <?php foreach ($jobs as $job): ?>
-              <tr>
-                <td data-label="Title">
-                  <a href="jobs.php?id=<?= (int) $job['id'] ?>" target="_blank"><?= e($job['title']) ?></a>
-                </td>
-                <td data-label="Type"><?= e($job['job_type']) ?></td>
-                <td data-label="Status">
-                  <span class="badge badge-<?= e($job['status']) ?>"><?= e($job['status']) ?></span>
-                </td>
-                <td data-label="Applicants"><?= (int) $job['applicant_count'] ?></td>
-                <td data-label="Posted"><?= e(format_date($job['created_at'])) ?></td>
-                <td data-label="Actions">
-                  <div class="table-actions">
-                    <a class="btn btn-secondary btn-sm" href="recruiter-dashboard.php?edit=<?= (int) $job['id'] ?>">Edit</a>
-
-                    <form method="post" action="recruiter-dashboard.php">
-                      <?= csrf_field() ?>
-                      <input type="hidden" name="action" value="toggle_status">
-                      <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
-                      <input type="hidden" name="status" value="<?= $job['status'] === 'open' ? 'closed' : 'open' ?>">
-                      <button type="submit" class="btn btn-secondary btn-sm">
-                        <?= $job['status'] === 'open' ? 'Close' : 'Reopen' ?>
-                      </button>
-                    </form>
-
-                    <form method="post" action="recruiter-dashboard.php"
-                          onsubmit="return confirm('Delete this job permanently? This also removes its applications.');">
-                      <?= csrf_field() ?>
-                      <input type="hidden" name="action" value="delete_job">
-                      <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
-                      <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      <?php endif; ?>
+            <!-- Hire Rate Widget -->
+            <div class="card-rec widget-card-rec flex-1-rec">
+                <div>
+                    <div class="widget-header-rec">
+                        <h3 class="widget-title-rec">Hire Rate</h3>
+                        <span class="badge-rec badge-emerald">+12% vs last mo</span>
+                    </div>
+                    <p class="widget-subtitle-rec">Conversion from screening to offer acceptance.</p>
+                    <div class="stat-highlight-rec">
+                        <span class="stat-number-rec"><?= $hireRate ?>%</span>
+                        <span class="stat-meta-rec"><?= $hiredCandidates ?> of <?= $totalApplicants ?> candidates hired</span>
+                    </div>
+                    <div class="progress-bar-bg-rec">
+                        <div class="progress-bar-fill-rec" style="width: <?= min(100, $hireRate) ?>%;"></div>
+                    </div>
+                </div>
+                <div class="widget-footer-rec">
+                    <span>Avg time to hire: <strong>14 days</strong></span>
+                    <span>Target: <strong>21 days</strong></span>
+                </div>
+            </div>
+        </section>
     </div>
-
-  <?php else: ?>
-    <!-- ---------- Applicants table ---------- -->
-    <div class="card">
-      <form class="filters-bar" method="get" action="recruiter-dashboard.php" style="margin-bottom:16px;">
-        <input type="hidden" name="tab" value="applicants">
-        <select name="job_id" onchange="this.form.submit()">
-          <option value="">All Jobs</option>
-          <?php foreach ($jobs as $job): ?>
-            <option value="<?= (int) $job['id'] ?>"<?= $filterJobId === (int) $job['id'] ? ' selected' : '' ?>>
-              <?= e($job['title']) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-        <select name="status" onchange="this.form.submit()">
-          <option value="">All Statuses</option>
-          <?php foreach (APPLICATION_STATUSES as $value => $label): ?>
-            <option value="<?= e($value) ?>"<?= $filterStatus === $value ? ' selected' : '' ?>><?= e($label) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button type="submit" class="btn btn-secondary">Filter</button>
-      </form>
-
-      <?php if (!$applicants): ?>
-        <div class="empty-state">No applicants found.</div>
-      <?php else: ?>
-        <table>
-          <thead>
-            <tr><th>Applicant</th><th>Job</th><th>Applied</th><th>Interview</th><th>Status</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            <?php foreach ($applicants as $applicant): ?>
-              <tr>
-                <td data-label="Applicant"><?= e($applicant['full_name']) ?></td>
-                <td data-label="Job"><?= e($applicant['job_title']) ?></td>
-                <td data-label="Applied"><?= e(format_date($applicant['applied_at'])) ?></td>
-                <td data-label="Interview">
-                  <?= $applicant['interview_at'] ? e(format_datetime($applicant['interview_at'])) : '—' ?>
-                </td>
-                <td data-label="Status">
-                  <span class="badge badge-<?= e($applicant['status']) ?>"><?= e(status_label($applicant['status'])) ?></span>
-                </td>
-                <td data-label="Actions">
-                  <?php if (!in_array($applicant['status'], ['rejected', 'withdrawn'], true)): ?>
-                    <a class="btn btn-secondary btn-sm"
-                       href="<?= e($applicantsUrl) ?>&review=<?= (int) $applicant['application_id'] ?>">Review</a>
-                  <?php else: ?>
-                    <span class="form-hint">&mdash;</span>
-                  <?php endif; ?>
-                </td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      <?php endif; ?>
-    </div>
-  <?php endif; ?>
-
-  <!-- Floating widgets -->
-  <div class="widget-dock">
-    <section class="widget widget-interviews">
-      <h4>Upcoming Interviews</h4>
-      <?php if (!$interviews): ?>
-        <p class="widget-empty">Schedule one from an applicant's review panel.</p>
-      <?php else: ?>
-        <ul class="widget-list">
-          <?php foreach ($interviews as $iv): ?>
-            <li>
-              <span class="widget-avatar"><?= e(initials((string) $iv['person'])) ?></span>
-              <span class="widget-lines">
-                <span class="widget-name"><?= e($iv['person']) ?></span>
-                <span class="widget-meta"><?= e($iv['job_title']) ?></span>
-              </span>
-              <span class="widget-date"><?= e(date('M j', strtotime($iv['interview_at']))) ?></span>
-            </li>
-          <?php endforeach; ?>
-        </ul>
-      <?php endif; ?>
-    </section>
-
-    <section class="widget widget-rate">
-      <h4>Hire Rate</h4>
-      <div class="donut-wrapper">
-        <svg class="donut-svg" viewBox="0 0 100 100">
-          <circle class="donut-bg" cx="50" cy="50" r="40"></circle>
-          <circle class="donut-progress" cx="50" cy="50" r="40"
-                  stroke-dasharray="<?= $donutCircumference ?>"
-                  stroke-dashoffset="<?= $donutOffset ?>"></circle>
-        </svg>
-        <div class="donut-text"><?= $hireRate ?>%</div>
-      </div>
-      <p class="widget-empty"><?= $hiredCandidates ?> of <?= $totalApplicants ?> hired</p>
-    </section>
-  </div>
-
 </main>
 
-<!-- ---------- Job dialog (create / edit) ---------- -->
+<!-- ---------- Post / Edit Job Dialog ---------- -->
 <?php if ($showJobDialog): ?>
   <div class="modal-overlay show">
-    <div class="modal">
+    <div class="modal" style="max-width: 600px;">
       <div class="modal-header">
-        <h3 class="mb-0"><?= $editJob ? 'Edit Job' : 'Post a Job' ?></h3>
+        <h3 class="mb-0"><?= $editJob ? 'Edit Job Posting' : 'Create New Job Posting' ?></h3>
         <a class="modal-close" href="recruiter-dashboard.php?tab=jobs">&times;</a>
       </div>
-
-      <?php if ($formError): ?>
-        <div class="alert alert-error show"><?= e($formError) ?></div>
-      <?php endif; ?>
 
       <form method="post" action="recruiter-dashboard.php">
         <?= csrf_field() ?>
@@ -646,39 +1299,39 @@ require __DIR__ . '/header.php';
         <?php endif; ?>
 
         <div class="form-group">
-          <label for="title">Job title</label>
+          <label for="title">Job Title</label>
           <input type="text" id="title" name="title" required maxlength="150"
                  value="<?= e(old($formOld, 'title', $editJob['title'] ?? '')) ?>">
         </div>
         <div class="form-group">
-          <label for="description">Description</label>
-          <textarea id="description" name="description" required><?= e(old($formOld, 'description', $editJob['description'] ?? '')) ?></textarea>
+          <label for="description">Job Description</label>
+          <textarea id="description" name="description" rows="3" required><?= e(old($formOld, 'description', $editJob['description'] ?? '')) ?></textarea>
         </div>
         <div class="form-group">
           <label for="requirements">Requirements</label>
-          <textarea id="requirements" name="requirements"><?= e(old($formOld, 'requirements', $editJob['requirements'] ?? '')) ?></textarea>
+          <textarea id="requirements" name="requirements" rows="2"><?= e(old($formOld, 'requirements', $editJob['requirements'] ?? '')) ?></textarea>
         </div>
         <div class="form-group">
-          <label for="skills_required">Skills required (comma separated)</label>
-          <input type="text" id="skills_required" name="skills_required"
+          <label for="skills_required">Skills Required (Comma separated)</label>
+          <input type="text" id="skills_required" name="skills_required" placeholder="e.g. PHP, MySQL, React"
                  value="<?= e(old($formOld, 'skills_required', $editJob['skills_required'] ?? '')) ?>">
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="job_type">Job type</label>
+            <label for="job_type">Job Type</label>
             <?php $selectedType = old($formOld, 'job_type', $editJob['job_type'] ?? ''); ?>
             <select id="job_type" name="job_type" required>
               <?php foreach (JOB_TYPES as $value => $label): ?>
-                <option value="<?= e($value) ?>"<?= $selectedType === $value ? ' selected' : '' ?>><?= e($label) ?></option>
+                <option value="<?= e($value) ?>" <?= $selectedType === $value ? 'selected' : '' ?>><?= e($label) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
           <div class="form-group">
-            <label for="work_mode">Work mode</label>
+            <label for="work_mode">Work Mode</label>
             <?php $selectedMode = old($formOld, 'work_mode', $editJob['work_mode'] ?? ''); ?>
             <select id="work_mode" name="work_mode" required>
               <?php foreach (WORK_MODES as $value => $label): ?>
-                <option value="<?= e($value) ?>"<?= $selectedMode === $value ? ' selected' : '' ?>><?= e($label) ?></option>
+                <option value="<?= e($value) ?>" <?= $selectedMode === $value ? 'selected' : '' ?>><?= e($label) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -697,12 +1350,12 @@ require __DIR__ . '/header.php';
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="vacancy_count">Vacancy count</label>
+            <label for="vacancy_count">Vacancy Count</label>
             <input type="number" id="vacancy_count" name="vacancy_count" min="1" required
                    value="<?= e(old($formOld, 'vacancy_count', (string) ($editJob['vacancy_count'] ?? 1))) ?>">
           </div>
           <div class="form-group">
-            <label for="deadline">Application deadline</label>
+            <label for="deadline">Application Deadline</label>
             <input type="date" id="deadline" name="deadline"
                    value="<?= e(old($formOld, 'deadline', $editJob['deadline'] ?? '')) ?>">
           </div>
@@ -714,39 +1367,46 @@ require __DIR__ . '/header.php';
   </div>
 <?php endif; ?>
 
-<!-- ---------- Applicant review dialog ---------- -->
+<!-- ---------- Applicant Review Dialog ---------- -->
 <?php if ($reviewApplicant): ?>
   <div class="modal-overlay show">
-    <div class="modal">
+    <div class="modal" style="max-width: 650px;">
       <div class="modal-header">
         <h3 class="mb-0">Applicant Details</h3>
         <a class="modal-close" href="<?= e($applicantsUrl) ?>">&times;</a>
       </div>
 
-      <p>
+      <p style="margin-bottom: 0.5rem;">
         <strong><?= e($reviewApplicant['full_name']) ?></strong> ·
-        <?= e($reviewApplicant['email']) ?><?= $reviewApplicant['phone'] ? ' · ' . e($reviewApplicant['phone']) : '' ?>
+        <?= e($reviewApplicant['email']) ?> <?= $reviewApplicant['phone'] ? ' · ' . e($reviewApplicant['phone']) : '' ?>
       </p>
-      <p><strong>Applied for:</strong> <?= e($reviewApplicant['job_title']) ?></p>
+      <p style="margin-bottom: 0.5rem;"><strong>Applied for:</strong> <?= e($reviewApplicant['job_title']) ?></p>
       <?php if ($reviewApplicant['education']): ?>
-        <p><strong>Education:</strong> <?= e($reviewApplicant['education']) ?></p>
+        <p style="margin-bottom: 0.5rem;"><strong>Education:</strong> <?= e($reviewApplicant['education']) ?></p>
       <?php endif; ?>
       <?php if ($reviewApplicant['skills']): ?>
-        <p><strong>Skills:</strong> <?= e($reviewApplicant['skills']) ?></p>
-      <?php endif; ?>
-      <?php if ($reviewApplicant['bio']): ?>
-        <p><strong>Bio:</strong> <?= e($reviewApplicant['bio']) ?></p>
+        <p style="margin-bottom: 0.5rem;"><strong>Skills:</strong> <?= e($reviewApplicant['skills']) ?></p>
       <?php endif; ?>
 
       <?php if ($reviewApplicant['resume_path']): ?>
-        <p>
-          <a class="btn btn-secondary btn-sm"
-             href="download-resume.php?application_id=<?= (int) $reviewApplicant['application_id'] ?>">
-            Download Resume
-          </a>
-        </p>
+        <div style="margin-bottom: 1.25rem;">
+          <div style="display: flex; gap: 8px; margin-bottom: 0.75rem; flex-wrap: wrap;">
+            <a class="btn btn-primary btn-sm" target="_blank"
+               href="download-resume.php?application_id=<?= (int) $reviewApplicant['application_id'] ?>&mode=preview">
+              Open Fullscreen Preview
+            </a>
+            <a class="btn btn-secondary btn-sm"
+               href="download-resume.php?application_id=<?= (int) $reviewApplicant['application_id'] ?>">
+              Download Resume
+            </a>
+          </div>
+          <div style="border: 1px solid #cbd5e1; border-radius: 0.75rem; overflow: hidden; background: #f8fafc;">
+            <iframe src="download-resume.php?application_id=<?= (int) $reviewApplicant['application_id'] ?>&mode=preview"
+                    style="width: 100%; height: 420px; border: none;" title="Resume Preview"></iframe>
+          </div>
+        </div>
       <?php else: ?>
-        <p class="form-hint">No resume uploaded.</p>
+        <p class="form-hint" style="margin-bottom: 1rem;">No resume uploaded by candidate.</p>
       <?php endif; ?>
 
       <form method="post" action="recruiter-dashboard.php">
@@ -756,17 +1416,17 @@ require __DIR__ . '/header.php';
 
         <div class="form-row">
           <div class="form-group">
-            <label for="review_status">Application status</label>
+            <label for="review_status">Application Status</label>
             <select id="review_status" name="status">
               <?php foreach (APPLICATION_STATUSES as $value => $label): ?>
-                <option value="<?= e($value) ?>"<?= $reviewApplicant['status'] === $value ? ' selected' : '' ?>>
+                <option value="<?= e($value) ?>" <?= $reviewApplicant['status'] === $value ? 'selected' : '' ?>>
                   <?= e($label) ?>
                 </option>
               <?php endforeach; ?>
             </select>
           </div>
           <div class="form-group">
-            <label for="interview_at">Interview date &amp; time</label>
+            <label for="interview_at">Interview Date &amp; Time</label>
             <input type="datetime-local" id="interview_at" name="interview_at"
                    value="<?= e(datetime_local($reviewApplicant['interview_at'])) ?>">
             <div class="form-hint">Leave blank if nothing is scheduled.</div>
@@ -774,8 +1434,9 @@ require __DIR__ . '/header.php';
         </div>
 
         <div class="form-group">
-          <label for="review_notes">Internal notes</label>
-          <textarea id="review_notes" name="notes" placeholder="Notes visible only to your team"><?= e($reviewApplicant['notes'] ?? '') ?></textarea>
+          <label for="review_notes">Internal Notes</label>
+          <textarea id="review_notes" name="notes" rows="2"
+                    placeholder="Notes visible only to your team"><?= e($reviewApplicant['notes'] ?? '') ?></textarea>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block">Save Changes</button>
@@ -783,5 +1444,174 @@ require __DIR__ . '/header.php';
     </div>
   </div>
 <?php endif; ?>
+
+<!-- ---------- Reopen Job Dialog ---------- -->
+<?php if ($reopenJob): ?>
+  <div class="modal-overlay show">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="mb-0">Reopen Job</h3>
+        <a class="modal-close" href="recruiter-dashboard.php?tab=jobs">&times;</a>
+      </div>
+
+      <p style="margin-bottom: 1rem; color: #475569;">
+        You are reopening <strong><?= e($reopenJob['title']) ?></strong>.
+        Please select an extended deadline date for accepting new applications.
+      </p>
+
+      <form method="post" action="recruiter-dashboard.php">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="toggle_status">
+        <input type="hidden" name="job_id" value="<?= (int) $reopenJob['id'] ?>">
+        <input type="hidden" name="status" value="open">
+
+        <div class="form-group">
+          <label for="reopen_deadline">New Application Deadline</label>
+          <input type="date" id="reopen_deadline" name="deadline" required min="<?= date('Y-m-d') ?>"
+                 value="<?= date('Y-m-d', strtotime('+14 days')) ?>">
+          <div class="form-hint">Set a future date for candidates to submit applications.</div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 1.5rem;">
+          <a href="recruiter-dashboard.php?tab=jobs" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary">Reopen Job Now</button>
+        </div>
+      </form>
+    </div>
+  </div>
+<?php endif; ?>
+
+<!-- ---------- Bulk Action Confirmation Dialog ---------- -->
+<div id="bulkConfirmModal" class="modal-overlay" style="display: none;">
+  <div class="modal" style="max-width: 520px;">
+    <div class="modal-header">
+      <h3 class="mb-0">Confirm Bulk Action</h3>
+      <button type="button" class="modal-close" onclick="closeBulkModal()">&times;</button>
+    </div>
+
+    <div style="padding: 1rem 0;">
+      <p id="bulkModalMessage" style="font-size: 0.9375rem; color: var(--slate-700); margin-bottom: 1rem;"></p>
+
+      <div class="form-group" style="margin-bottom: 1rem;" id="bulkInterviewGroup">
+        <label for="modal_bulk_interview_at" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--slate-700);">Interview Date &amp; Time (Optional)</label>
+        <input type="datetime-local" id="modal_bulk_interview_at" class="input-control-prof">
+        <div class="form-hint">Assign an interview slot for all selected candidates.</div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0.5rem;">
+        <label for="modal_bulk_notes" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--slate-700);">Notes / Message Description (Optional)</label>
+        <textarea id="modal_bulk_notes" rows="3" class="input-control-prof" placeholder="Add custom notes or description to send to candidate records..."></textarea>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 1rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeBulkModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="confirmAndSubmitBulkAction()">OK, Proceed</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let pendingBulkStatus = '';
+
+function updateBulkBar() {
+    const checked = document.querySelectorAll('.candidate-checkbox:checked');
+    const bulkBar = document.getElementById('bulkActionBar');
+    const selectedCount = document.getElementById('selectedCount');
+    if (bulkBar && selectedCount) {
+        selectedCount.textContent = checked.length;
+        bulkBar.style.display = checked.length > 0 ? 'flex' : 'none';
+    }
+}
+
+function submitBulkAction(status) {
+    const checked = document.querySelectorAll('.candidate-checkbox:checked');
+    if (checked.length === 0) {
+        alert('Please select at least one candidate.');
+        return;
+    }
+    
+    pendingBulkStatus = status;
+    const label = status.replace('_', ' ').toUpperCase();
+    const count = checked.length;
+    
+    const msgEl = document.getElementById('bulkModalMessage');
+    if (msgEl) {
+        msgEl.innerHTML = `Are you sure you want to move <strong>${count} candidate(s)</strong> to <strong>${label}</strong> stage?`;
+    }
+    
+    // Reset inputs for clean modal prompt
+    const modalInterview = document.getElementById('modal_bulk_interview_at');
+    const modalNotes = document.getElementById('modal_bulk_notes');
+    if (modalInterview) modalInterview.value = '';
+    if (modalNotes) modalNotes.value = '';
+
+    // Hide interview group if rejecting or withdrawing
+    const intGroup = document.getElementById('bulkInterviewGroup');
+    if (intGroup) {
+        intGroup.style.display = (status === 'rejected' || status === 'withdrawn') ? 'none' : 'block';
+    }
+
+    const modal = document.getElementById('bulkConfirmModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('show');
+    }
+}
+
+function closeBulkModal() {
+    const modal = document.getElementById('bulkConfirmModal');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+    }
+}
+
+function confirmAndSubmitBulkAction() {
+    if (pendingBulkStatus) {
+        document.getElementById('bulkStatusInput').value = pendingBulkStatus;
+
+        const modalInterview = document.getElementById('modal_bulk_interview_at');
+        const modalNotes = document.getElementById('modal_bulk_notes');
+
+        if (modalInterview) {
+            document.getElementById('bulkInterviewInput').value = modalInterview.value;
+        }
+        if (modalNotes) {
+            document.getElementById('bulkNotesInput').value = modalNotes.value;
+        }
+
+        document.getElementById('bulkActionForm').submit();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('candidateSearch');
+    const tableRows = document.querySelectorAll('.data-table-rec tbody tr');
+    
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            tableRows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+    }
+
+    const selectAll = document.getElementById('selectAllCandidates');
+    const rowCheckboxes = document.querySelectorAll('.candidate-checkbox');
+    if (selectAll) {
+        selectAll.addEventListener('change', (e) => {
+            rowCheckboxes.forEach(cb => cb.checked = e.target.checked);
+            updateBulkBar();
+        });
+    }
+    
+    rowCheckboxes.forEach(cb => {
+        cb.addEventListener('change', updateBulkBar);
+    });
+});
+</script>
 
 <?php require __DIR__ . '/footer.php'; ?>

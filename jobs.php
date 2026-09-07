@@ -12,6 +12,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 
 $pdo = get_db();
+auto_close_expired_jobs($pdo);
+
 
 // ---------------------------------------------------------------
 // POST: a student applies for a job

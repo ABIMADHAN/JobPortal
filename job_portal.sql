@@ -1,0 +1,605 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.1
+-- https://www.phpmyadmin.net/
+--
+-- Host: 127.0.0.1
+-- Generation Time: Sep 05, 2026 at 07:32 AM
+-- Server version: 10.4.32-MariaDB
+-- PHP Version: 8.1.25
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Database: `job_portal`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `applications`
+--
+
+CREATE TABLE `applications` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `job_id` int(10) UNSIGNED NOT NULL,
+  `student_id` int(10) UNSIGNED NOT NULL,
+  `status` enum('applied','under_review','shortlisted','rejected','hired','withdrawn') NOT NULL DEFAULT 'applied',
+  `interview_at` datetime DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `applied_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `applications`
+--
+
+INSERT INTO `applications` (`id`, `job_id`, `student_id`, `status`, `interview_at`, `notes`, `applied_at`, `updated_at`) VALUES
+(6, 3, 12, 'under_review', '2026-08-17 10:00:00', 'tomorrow meeting 10am to 11am', '2026-08-07 14:02:02', '2026-08-07 14:04:48'),
+(7, 3, 19, 'rejected', NULL, 'Be ready on time !!', '2026-08-07 18:34:22', '2026-08-09 10:09:35'),
+(8, 8, 20, 'hired', '2026-08-07 09:00:00', 'Come sharply for yoga.', '2026-08-07 19:17:07', '2026-08-07 19:18:28');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `companies`
+--
+
+CREATE TABLE `companies` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `company_name` varchar(150) NOT NULL,
+  `description` text DEFAULT NULL,
+  `website` varchar(255) DEFAULT NULL,
+  `location` varchar(150) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `companies`
+--
+
+INSERT INTO `companies` (`id`, `user_id`, `company_name`, `description`, `website`, `location`, `created_at`, `updated_at`) VALUES
+(3, 5, 'TVS', '', 'https://madhan.info', 'Karur', '2026-08-07 12:56:27', '2026-08-07 19:13:43');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `email_queue`
+--
+
+CREATE TABLE `email_queue` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `recipient` varchar(255) NOT NULL,
+  `subject` varchar(255) NOT NULL,
+  `body` longtext NOT NULL,
+  `status` enum('pending','processing','sent','failed') NOT NULL DEFAULT 'pending',
+  `attempts` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
+  `last_error` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `processed_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `email_queue`
+--
+
+INSERT INTO `email_queue` (`id`, `recipient`, `subject`, `body`, `status`, `attempts`, `last_error`, `created_at`, `processed_at`) VALUES
+(1, 'test@example.com', 'Test Subject', '<p>Test email body</p>', 'sent', 1, NULL, '2026-08-09 09:59:05', '2026-08-09 09:59:31'),
+(2, 'giridhar4434@gmail.com', 'Rejected — Software Developer at TVS', '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" /><meta name=\"color-scheme\" content=\"light\" /><meta name=\"supported-color-schemes\" content=\"light\" /><title>CareerStudio</title><style>:root{color-scheme:light;supported-color-schemes:light;}@import url(\'https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap\');@media only screen and (max-width:620px){.wrap{width:100%!important;}.pad{padding-left:22px!important;padding-right:22px!important;}.h1{font-size:26px!important;line-height:34px!important;}.stack{display:block!important;width:100%!important;padding-bottom:0!important;}.stack-v{padding-top:2px!important;padding-bottom:12px!important;}.btn a{display:block!important;}}@media (prefers-color-scheme:dark){.e-bg{background-color:#eef1f6!important;}.e-surface{background-color:#ffffff!important;}.e-soft{background-color:#f7f9fb!important;}.e-ink{color:#0F172A!important;}.e-title{color:#191c1e!important;}.e-text{color:#191c1e!important;}.e-muted{color:#45464d!important;}.e-muted a{color:#45464d!important;}.e-faint{color:#8a8d93!important;}.e-chip{background-color:#eceef0!important;color:#45464d!important;}.e-btn a{color:#ffffff!important;}.e-avatar td{color:#ffffff!important;}.e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}.e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}.e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}.e-s-hired{background-color:#d1fae5!important;color:#047857!important;}.e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}.e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}}[data-ogsc] .e-bg{background-color:#eef1f6!important;}[data-ogsc] .e-surface{background-color:#ffffff!important;}[data-ogsc] .e-soft{background-color:#f7f9fb!important;}[data-ogsc] .e-ink{color:#0F172A!important;}[data-ogsc] .e-title{color:#191c1e!important;}[data-ogsc] .e-text{color:#191c1e!important;}[data-ogsc] .e-muted{color:#45464d!important;}[data-ogsc] .e-muted a{color:#45464d!important;}[data-ogsc] .e-faint{color:#8a8d93!important;}[data-ogsc] .e-chip{background-color:#eceef0!important;color:#45464d!important;}[data-ogsc] .e-btn a{color:#ffffff!important;}[data-ogsc] .e-avatar td{color:#ffffff!important;}[data-ogsc] .e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}[data-ogsc] .e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}[data-ogsc] .e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}[data-ogsc] .e-s-hired{background-color:#d1fae5!important;color:#047857!important;}[data-ogsc] .e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}[data-ogsc] .e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}[data-ogsb] .e-bg{background-color:#eef1f6!important;}[data-ogsb] .e-surface{background-color:#ffffff!important;}[data-ogsb] .e-soft{background-color:#f7f9fb!important;}[data-ogsb] .e-ink{color:#0F172A!important;}[data-ogsb] .e-title{color:#191c1e!important;}[data-ogsb] .e-text{color:#191c1e!important;}[data-ogsb] .e-muted{color:#45464d!important;}[data-ogsb] .e-muted a{color:#45464d!important;}[data-ogsb] .e-faint{color:#8a8d93!important;}[data-ogsb] .e-chip{background-color:#eceef0!important;color:#45464d!important;}[data-ogsb] .e-btn a{color:#ffffff!important;}[data-ogsb] .e-avatar td{color:#ffffff!important;}[data-ogsb] .e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}[data-ogsb] .e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}[data-ogsb] .e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}[data-ogsb] .e-s-hired{background-color:#d1fae5!important;color:#047857!important;}[data-ogsb] .e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}[data-ogsb] .e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}</style></head><body class=\"e-bg\" bgcolor=\"#eef1f6\" style=\"margin:0;padding:0;background-color:#eef1f6;-webkit-font-smoothing:antialiased;\"><div style=\"display:none;font-size:1px;color:#eef1f6;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;\">Your application for Software Developer at TVS is now rejected.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-bg\" bgcolor=\"#eef1f6\" style=\"background-color:#eef1f6;\"><tr><td align=\"center\" style=\"padding:32px 12px 40px;\"><table role=\"presentation\" class=\"wrap\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" style=\"width:600px;max-width:600px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;\"><tr><td class=\"pad e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;padding:24px 32px;border:1px solid #c6c6cd;border-bottom:0;border-radius:16px 16px 0 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td width=\"26\" valign=\"middle\" style=\"padding-right:9px;\"><img src=\"cid:careerstudio-logo\" width=\"24\" height=\"24\" alt=\"\" style=\"display:block;width:24px;height:24px;border:0;\" /></td><td class=\"e-ink\" valign=\"middle\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#0F172A;font-size:22px;font-weight:800;letter-spacing:-0.4px;line-height:26px;\">CareerStudio</td></tr></table></td></tr><tr><td class=\"e-surface\" bgcolor=\"#ffffff\" style=\"background-color:#ffffff;border-left:1px solid #c6c6cd;border-right:1px solid #c6c6cd;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:36px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"e-s-rejected\" bgcolor=\"#fee2e2\" style=\"background-color:#fee2e2;border-radius:99px;padding:6px 14px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;color:#B91C1C;\">REJECTED</td></tr></table><h1 class=\"h1 e-title\" style=\"margin:18px 0 0;font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:30px;line-height:38px;font-weight:800;letter-spacing:-0.6px;color:#191c1e;\">An update on your application</h1><p class=\"e-muted\" style=\"margin:12px 0 0;font-size:16px;line-height:26px;color:#45464d;\">Hi Giri,<br>The team has decided not to move forward this time. Keep applying — your next role is out there.</p></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:26px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-surface\" bgcolor=\"#ffffff\" style=\"background-color:#ffffff;border:1px solid #c6c6cd;border-radius:16px;\"><tr><td style=\"padding:20px;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td width=\"48\" valign=\"top\" style=\"padding-right:14px;\"><table role=\"presentation\" class=\"e-avatar\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"48\" bgcolor=\"#0EA5E9\" style=\"width:48px;height:48px;background-color:#0EA5E9;border-radius:14px;\"><tr><td align=\"center\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;line-height:48px;\"><span data-alt=\"skip\">T</span></td></tr></table></td><td valign=\"top\"><div class=\"e-text\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#191c1e;line-height:24px;\">Software Developer</div><div class=\"e-muted\" style=\"font-size:14px;color:#45464d;padding-top:3px;\">TVS</div><div><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">onsite</span><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">full-time</span><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">Chennai</span></div></td></tr></table></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:24px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-s-rejected\" bgcolor=\"#fee2e2\" style=\"background-color:#fee2e2;border-left:4px solid #B91C1C;border-radius:12px;\"><tr><td style=\"padding:18px 20px;\"><div style=\"font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#B91C1C;\">Interview scheduled</div><div class=\"e-text\" style=\"font-size:15px;line-height:24px;color:#191c1e;padding-top:7px;\"><strong style=\"font-size:17px;\">Dec 27, 2026 · 10:00 AM</strong><br>Add it to your calendar and join a few minutes early.</div></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:10px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Status</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\"><span class=\"e-s-rejected\" style=\"display:inline-block;background-color:#fee2e2;color:#B91C1C;font-size:13px;font-weight:700;padding:5px 12px;border-radius:6px;text-transform:capitalize;\">rejected</span></td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Interview</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">Dec 27, 2026 · 10:00 AM</td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Applied on</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">Aug 7, 2026 · 6:34 PM</td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Reference</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">#00007</td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:24px 32px 0;\"><div class=\"e-faint\" style=\"font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;padding-bottom:9px;\">Message from the recruiter</div><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;border:1px solid #e4e7ec;border-radius:12px;\"><tr><td class=\"e-text\" style=\"padding:16px 18px;font-size:15px;line-height:24px;color:#191c1e;font-style:italic;\">&ldquo;Be ready on time !!&rdquo;</td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:30px 32px 4px;\"><table role=\"presentation\" class=\"btn e-btn\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td align=\"center\" bgcolor=\"#B91C1C\" style=\"background-color:#B91C1C;border-radius:12px;\"><a href=\"http://localhost/JobPortal/student-dashboard.php\" target=\"_blank\" style=\"display:inline-block;padding:14px 30px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:12px;\">Open my dashboard</a></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td style=\"height:34px;line-height:34px;font-size:0;\">&nbsp;</td></tr></table></td></tr><tr><td class=\"pad e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;border:1px solid #c6c6cd;border-top:0;border-radius:0 0 16px 16px;padding:24px 32px 28px;\"><div class=\"e-muted\" style=\"font-size:13px;line-height:20px;color:#45464d;\"><a href=\"http://localhost/JobPortal/jobs.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Browse Jobs</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/internships.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Internships</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/companies.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Companies</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/student-dashboard.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">My Dashboard</a></div><p class=\"e-faint\" style=\"margin:16px 0 0;font-size:12px;line-height:18px;color:#8a8d93;\">You are receiving this because you applied for a role on CareerStudio. This mailbox is not monitored — please reply through the portal.</p><p class=\"e-faint\" style=\"margin:10px 0 0;font-size:12px;line-height:18px;color:#8a8d93;\">&copy; 2026 CareerStudio AI. Precision in Professional Growth.</p></td></tr></table></td></tr></table></body></html>', 'sent', 1, NULL, '2026-08-09 10:00:54', '2026-08-09 10:01:00'),
+(3, 'giridhar4434@gmail.com', 'Shortlisted — Software Developer at TVS', '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" /><meta name=\"color-scheme\" content=\"light\" /><meta name=\"supported-color-schemes\" content=\"light\" /><title>CareerStudio</title><style>:root{color-scheme:light;supported-color-schemes:light;}@import url(\'https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap\');@media only screen and (max-width:620px){.wrap{width:100%!important;}.pad{padding-left:22px!important;padding-right:22px!important;}.h1{font-size:26px!important;line-height:34px!important;}.stack{display:block!important;width:100%!important;padding-bottom:0!important;}.stack-v{padding-top:2px!important;padding-bottom:12px!important;}.btn a{display:block!important;}}@media (prefers-color-scheme:dark){.e-bg{background-color:#eef1f6!important;}.e-surface{background-color:#ffffff!important;}.e-soft{background-color:#f7f9fb!important;}.e-ink{color:#0F172A!important;}.e-title{color:#191c1e!important;}.e-text{color:#191c1e!important;}.e-muted{color:#45464d!important;}.e-muted a{color:#45464d!important;}.e-faint{color:#8a8d93!important;}.e-chip{background-color:#eceef0!important;color:#45464d!important;}.e-btn a{color:#ffffff!important;}.e-avatar td{color:#ffffff!important;}.e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}.e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}.e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}.e-s-hired{background-color:#d1fae5!important;color:#047857!important;}.e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}.e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}}[data-ogsc] .e-bg{background-color:#eef1f6!important;}[data-ogsc] .e-surface{background-color:#ffffff!important;}[data-ogsc] .e-soft{background-color:#f7f9fb!important;}[data-ogsc] .e-ink{color:#0F172A!important;}[data-ogsc] .e-title{color:#191c1e!important;}[data-ogsc] .e-text{color:#191c1e!important;}[data-ogsc] .e-muted{color:#45464d!important;}[data-ogsc] .e-muted a{color:#45464d!important;}[data-ogsc] .e-faint{color:#8a8d93!important;}[data-ogsc] .e-chip{background-color:#eceef0!important;color:#45464d!important;}[data-ogsc] .e-btn a{color:#ffffff!important;}[data-ogsc] .e-avatar td{color:#ffffff!important;}[data-ogsc] .e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}[data-ogsc] .e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}[data-ogsc] .e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}[data-ogsc] .e-s-hired{background-color:#d1fae5!important;color:#047857!important;}[data-ogsc] .e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}[data-ogsc] .e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}[data-ogsb] .e-bg{background-color:#eef1f6!important;}[data-ogsb] .e-surface{background-color:#ffffff!important;}[data-ogsb] .e-soft{background-color:#f7f9fb!important;}[data-ogsb] .e-ink{color:#0F172A!important;}[data-ogsb] .e-title{color:#191c1e!important;}[data-ogsb] .e-text{color:#191c1e!important;}[data-ogsb] .e-muted{color:#45464d!important;}[data-ogsb] .e-muted a{color:#45464d!important;}[data-ogsb] .e-faint{color:#8a8d93!important;}[data-ogsb] .e-chip{background-color:#eceef0!important;color:#45464d!important;}[data-ogsb] .e-btn a{color:#ffffff!important;}[data-ogsb] .e-avatar td{color:#ffffff!important;}[data-ogsb] .e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}[data-ogsb] .e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}[data-ogsb] .e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}[data-ogsb] .e-s-hired{background-color:#d1fae5!important;color:#047857!important;}[data-ogsb] .e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}[data-ogsb] .e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}</style></head><body class=\"e-bg\" bgcolor=\"#eef1f6\" style=\"margin:0;padding:0;background-color:#eef1f6;-webkit-font-smoothing:antialiased;\"><div style=\"display:none;font-size:1px;color:#eef1f6;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;\">Your application for Software Developer at TVS is now shortlisted.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-bg\" bgcolor=\"#eef1f6\" style=\"background-color:#eef1f6;\"><tr><td align=\"center\" style=\"padding:32px 12px 40px;\"><table role=\"presentation\" class=\"wrap\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" style=\"width:600px;max-width:600px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;\"><tr><td class=\"pad e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;padding:24px 32px;border:1px solid #c6c6cd;border-bottom:0;border-radius:16px 16px 0 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td width=\"26\" valign=\"middle\" style=\"padding-right:9px;\"><img src=\"cid:careerstudio-logo\" width=\"24\" height=\"24\" alt=\"\" style=\"display:block;width:24px;height:24px;border:0;\" /></td><td class=\"e-ink\" valign=\"middle\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#0F172A;font-size:22px;font-weight:800;letter-spacing:-0.4px;line-height:26px;\">CareerStudio</td></tr></table></td></tr><tr><td class=\"e-surface\" bgcolor=\"#ffffff\" style=\"background-color:#ffffff;border-left:1px solid #c6c6cd;border-right:1px solid #c6c6cd;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:36px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"e-s-shortlisted\" bgcolor=\"#e0f2fe\" style=\"background-color:#e0f2fe;border-radius:99px;padding:6px 14px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;color:#0369A1;\">SHORTLISTED</td></tr></table><h1 class=\"h1 e-title\" style=\"margin:18px 0 0;font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:30px;line-height:38px;font-weight:800;letter-spacing:-0.6px;color:#191c1e;\">You have been shortlisted</h1><p class=\"e-muted\" style=\"margin:12px 0 0;font-size:16px;line-height:26px;color:#45464d;\">Hi Giri,<br>The team liked your profile and moved you to the shortlist.</p></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:26px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-surface\" bgcolor=\"#ffffff\" style=\"background-color:#ffffff;border:1px solid #c6c6cd;border-radius:16px;\"><tr><td style=\"padding:20px;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td width=\"48\" valign=\"top\" style=\"padding-right:14px;\"><table role=\"presentation\" class=\"e-avatar\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"48\" bgcolor=\"#0EA5E9\" style=\"width:48px;height:48px;background-color:#0EA5E9;border-radius:14px;\"><tr><td align=\"center\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;line-height:48px;\"><span data-alt=\"skip\">T</span></td></tr></table></td><td valign=\"top\"><div class=\"e-text\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#191c1e;line-height:24px;\">Software Developer</div><div class=\"e-muted\" style=\"font-size:14px;color:#45464d;padding-top:3px;\">TVS</div><div><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">onsite</span><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">full-time</span><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">Chennai</span></div></td></tr></table></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:24px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-s-shortlisted\" bgcolor=\"#e0f2fe\" style=\"background-color:#e0f2fe;border-left:4px solid #0369A1;border-radius:12px;\"><tr><td style=\"padding:18px 20px;\"><div style=\"font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#0369A1;\">Interview scheduled</div><div class=\"e-text\" style=\"font-size:15px;line-height:24px;color:#191c1e;padding-top:7px;\"><strong style=\"font-size:17px;\">Dec 27, 2026 · 10:00 AM</strong><br>Add it to your calendar and join a few minutes early.</div></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:10px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Status</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\"><span class=\"e-s-shortlisted\" style=\"display:inline-block;background-color:#e0f2fe;color:#0369A1;font-size:13px;font-weight:700;padding:5px 12px;border-radius:6px;text-transform:capitalize;\">shortlisted</span></td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Interview</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">Dec 27, 2026 · 10:00 AM</td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Applied on</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">Aug 7, 2026 · 6:34 PM</td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Reference</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">#00007</td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:24px 32px 0;\"><div class=\"e-faint\" style=\"font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;padding-bottom:9px;\">Message from the recruiter</div><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;border:1px solid #e4e7ec;border-radius:12px;\"><tr><td class=\"e-text\" style=\"padding:16px 18px;font-size:15px;line-height:24px;color:#191c1e;font-style:italic;\">&ldquo;Be ready on time !!&rdquo;</td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:30px 32px 4px;\"><table role=\"presentation\" class=\"btn e-btn\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td align=\"center\" bgcolor=\"#0369A1\" style=\"background-color:#0369A1;border-radius:12px;\"><a href=\"http://localhost/JobPortal/student-dashboard.php\" target=\"_blank\" style=\"display:inline-block;padding:14px 30px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:12px;\">Open my dashboard</a></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td style=\"height:34px;line-height:34px;font-size:0;\">&nbsp;</td></tr></table></td></tr><tr><td class=\"pad e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;border:1px solid #c6c6cd;border-top:0;border-radius:0 0 16px 16px;padding:24px 32px 28px;\"><div class=\"e-muted\" style=\"font-size:13px;line-height:20px;color:#45464d;\"><a href=\"http://localhost/JobPortal/jobs.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Browse Jobs</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/internships.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Internships</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/companies.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Companies</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/student-dashboard.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">My Dashboard</a></div><p class=\"e-faint\" style=\"margin:16px 0 0;font-size:12px;line-height:18px;color:#8a8d93;\">You are receiving this because you applied for a role on CareerStudio. This mailbox is not monitored — please reply through the portal.</p><p class=\"e-faint\" style=\"margin:10px 0 0;font-size:12px;line-height:18px;color:#8a8d93;\">&copy; 2026 CareerStudio AI. Precision in Professional Growth.</p></td></tr></table></td></tr></table></body></html>', 'sent', 1, NULL, '2026-08-09 10:08:57', '2026-08-09 10:09:05'),
+(4, 'giridhar4434@gmail.com', 'Rejected — Software Developer at TVS', '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" /><meta name=\"color-scheme\" content=\"light\" /><meta name=\"supported-color-schemes\" content=\"light\" /><title>CareerStudio</title><style>:root{color-scheme:light;supported-color-schemes:light;}@import url(\'https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap\');@media only screen and (max-width:620px){.wrap{width:100%!important;}.pad{padding-left:22px!important;padding-right:22px!important;}.h1{font-size:26px!important;line-height:34px!important;}.stack{display:block!important;width:100%!important;padding-bottom:0!important;}.stack-v{padding-top:2px!important;padding-bottom:12px!important;}.btn a{display:block!important;}}@media (prefers-color-scheme:dark){.e-bg{background-color:#eef1f6!important;}.e-surface{background-color:#ffffff!important;}.e-soft{background-color:#f7f9fb!important;}.e-ink{color:#0F172A!important;}.e-title{color:#191c1e!important;}.e-text{color:#191c1e!important;}.e-muted{color:#45464d!important;}.e-muted a{color:#45464d!important;}.e-faint{color:#8a8d93!important;}.e-chip{background-color:#eceef0!important;color:#45464d!important;}.e-btn a{color:#ffffff!important;}.e-avatar td{color:#ffffff!important;}.e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}.e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}.e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}.e-s-hired{background-color:#d1fae5!important;color:#047857!important;}.e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}.e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}}[data-ogsc] .e-bg{background-color:#eef1f6!important;}[data-ogsc] .e-surface{background-color:#ffffff!important;}[data-ogsc] .e-soft{background-color:#f7f9fb!important;}[data-ogsc] .e-ink{color:#0F172A!important;}[data-ogsc] .e-title{color:#191c1e!important;}[data-ogsc] .e-text{color:#191c1e!important;}[data-ogsc] .e-muted{color:#45464d!important;}[data-ogsc] .e-muted a{color:#45464d!important;}[data-ogsc] .e-faint{color:#8a8d93!important;}[data-ogsc] .e-chip{background-color:#eceef0!important;color:#45464d!important;}[data-ogsc] .e-btn a{color:#ffffff!important;}[data-ogsc] .e-avatar td{color:#ffffff!important;}[data-ogsc] .e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}[data-ogsc] .e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}[data-ogsc] .e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}[data-ogsc] .e-s-hired{background-color:#d1fae5!important;color:#047857!important;}[data-ogsc] .e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}[data-ogsc] .e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}[data-ogsb] .e-bg{background-color:#eef1f6!important;}[data-ogsb] .e-surface{background-color:#ffffff!important;}[data-ogsb] .e-soft{background-color:#f7f9fb!important;}[data-ogsb] .e-ink{color:#0F172A!important;}[data-ogsb] .e-title{color:#191c1e!important;}[data-ogsb] .e-text{color:#191c1e!important;}[data-ogsb] .e-muted{color:#45464d!important;}[data-ogsb] .e-muted a{color:#45464d!important;}[data-ogsb] .e-faint{color:#8a8d93!important;}[data-ogsb] .e-chip{background-color:#eceef0!important;color:#45464d!important;}[data-ogsb] .e-btn a{color:#ffffff!important;}[data-ogsb] .e-avatar td{color:#ffffff!important;}[data-ogsb] .e-s-applied{background-color:#ececfb!important;color:#4648d4!important;}[data-ogsb] .e-s-under-review{background-color:#fef3c7!important;color:#B45309!important;}[data-ogsb] .e-s-shortlisted{background-color:#e0f2fe!important;color:#0369A1!important;}[data-ogsb] .e-s-hired{background-color:#d1fae5!important;color:#047857!important;}[data-ogsb] .e-s-rejected{background-color:#fee2e2!important;color:#B91C1C!important;}[data-ogsb] .e-s-withdrawn{background-color:#eef2f6!important;color:#475569!important;}</style></head><body class=\"e-bg\" bgcolor=\"#eef1f6\" style=\"margin:0;padding:0;background-color:#eef1f6;-webkit-font-smoothing:antialiased;\"><div style=\"display:none;font-size:1px;color:#eef1f6;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;\">Your application for Software Developer at TVS is now rejected.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-bg\" bgcolor=\"#eef1f6\" style=\"background-color:#eef1f6;\"><tr><td align=\"center\" style=\"padding:32px 12px 40px;\"><table role=\"presentation\" class=\"wrap\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" style=\"width:600px;max-width:600px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;\"><tr><td class=\"pad e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;padding:24px 32px;border:1px solid #c6c6cd;border-bottom:0;border-radius:16px 16px 0 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td width=\"26\" valign=\"middle\" style=\"padding-right:9px;\"><img src=\"cid:careerstudio-logo\" width=\"24\" height=\"24\" alt=\"\" style=\"display:block;width:24px;height:24px;border:0;\" /></td><td class=\"e-ink\" valign=\"middle\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#0F172A;font-size:22px;font-weight:800;letter-spacing:-0.4px;line-height:26px;\">CareerStudio</td></tr></table></td></tr><tr><td class=\"e-surface\" bgcolor=\"#ffffff\" style=\"background-color:#ffffff;border-left:1px solid #c6c6cd;border-right:1px solid #c6c6cd;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:36px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"e-s-rejected\" bgcolor=\"#fee2e2\" style=\"background-color:#fee2e2;border-radius:99px;padding:6px 14px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;color:#B91C1C;\">REJECTED</td></tr></table><h1 class=\"h1 e-title\" style=\"margin:18px 0 0;font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:30px;line-height:38px;font-weight:800;letter-spacing:-0.6px;color:#191c1e;\">An update on your application</h1><p class=\"e-muted\" style=\"margin:12px 0 0;font-size:16px;line-height:26px;color:#45464d;\">Hi Giri,<br>The team has decided not to move forward this time. Keep applying — your next role is out there.</p></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:26px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-surface\" bgcolor=\"#ffffff\" style=\"background-color:#ffffff;border:1px solid #c6c6cd;border-radius:16px;\"><tr><td style=\"padding:20px;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td width=\"48\" valign=\"top\" style=\"padding-right:14px;\"><table role=\"presentation\" class=\"e-avatar\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"48\" bgcolor=\"#0EA5E9\" style=\"width:48px;height:48px;background-color:#0EA5E9;border-radius:14px;\"><tr><td align=\"center\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;line-height:48px;\"><span data-alt=\"skip\">T</span></td></tr></table></td><td valign=\"top\"><div class=\"e-text\" style=\"font-family:\'Manrope\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#191c1e;line-height:24px;\">Software Developer</div><div class=\"e-muted\" style=\"font-size:14px;color:#45464d;padding-top:3px;\">TVS</div><div><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">onsite</span><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">full-time</span><span class=\"e-chip\" style=\"display:inline-block;background-color:#eceef0;color:#45464d;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;margin:10px 6px 0 0;\">Chennai</span></div></td></tr></table></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:10px 32px 0;\"><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Status</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\"><span class=\"e-s-rejected\" style=\"display:inline-block;background-color:#fee2e2;color:#B91C1C;font-size:13px;font-weight:700;padding:5px 12px;border-radius:6px;text-transform:capitalize;\">rejected</span></td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Applied on</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid #e4e7ec;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">Aug 7, 2026 · 6:34 PM</td></tr><tr><td class=\"stack e-faint\" width=\"170\" valign=\"top\" style=\"width:170px;padding:14px 0;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;\">Reference</td><td class=\"stack stack-v e-text\" valign=\"top\" style=\"padding:14px 0;font-size:15px;line-height:22px;color:#191c1e;font-weight:600;\">#00007</td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:24px 32px 0;\"><div class=\"e-faint\" style=\"font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8a8d93;padding-bottom:9px;\">Message from the recruiter</div><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;border:1px solid #e4e7ec;border-radius:12px;\"><tr><td class=\"e-text\" style=\"padding:16px 18px;font-size:15px;line-height:24px;color:#191c1e;font-style:italic;\">&ldquo;Be ready on time !!&rdquo;</td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td class=\"pad\" style=\"padding:30px 32px 4px;\"><table role=\"presentation\" class=\"btn e-btn\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td align=\"center\" bgcolor=\"#B91C1C\" style=\"background-color:#B91C1C;border-radius:12px;\"><a href=\"http://localhost/JobPortal/student-dashboard.php\" target=\"_blank\" style=\"display:inline-block;padding:14px 30px;font-family:\'Inter\',\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:12px;\">Open my dashboard</a></td></tr></table></td></tr></table><table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\"><tr><td style=\"height:34px;line-height:34px;font-size:0;\">&nbsp;</td></tr></table></td></tr><tr><td class=\"pad e-soft\" bgcolor=\"#f7f9fb\" style=\"background-color:#f7f9fb;border:1px solid #c6c6cd;border-top:0;border-radius:0 0 16px 16px;padding:24px 32px 28px;\"><div class=\"e-muted\" style=\"font-size:13px;line-height:20px;color:#45464d;\"><a href=\"http://localhost/JobPortal/jobs.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Browse Jobs</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/internships.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Internships</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/companies.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">Companies</a><span style=\"color:#c6c6cd;padding:0 9px;\">&middot;</span><a href=\"http://localhost/JobPortal/student-dashboard.php\" style=\"color:#45464d;text-decoration:none;font-weight:600;\">My Dashboard</a></div><p class=\"e-faint\" style=\"margin:16px 0 0;font-size:12px;line-height:18px;color:#8a8d93;\">You are receiving this because you applied for a role on CareerStudio. This mailbox is not monitored — please reply through the portal.</p><p class=\"e-faint\" style=\"margin:10px 0 0;font-size:12px;line-height:18px;color:#8a8d93;\">&copy; 2026 CareerStudio AI. Precision in Professional Growth.</p></td></tr></table></td></tr></table></body></html>', 'sent', 1, NULL, '2026-08-09 10:09:35', '2026-08-09 10:09:40');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `jobs`
+--
+
+CREATE TABLE `jobs` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `company_id` int(10) UNSIGNED NOT NULL,
+  `title` varchar(150) NOT NULL,
+  `description` text NOT NULL,
+  `requirements` text DEFAULT NULL,
+  `skills_required` varchar(500) DEFAULT NULL,
+  `salary` varchar(100) DEFAULT NULL,
+  `job_type` enum('full-time','part-time','internship','contract') NOT NULL,
+  `location` varchar(150) DEFAULT NULL,
+  `work_mode` enum('remote','hybrid','onsite') NOT NULL DEFAULT 'onsite',
+  `vacancy_count` smallint(5) UNSIGNED NOT NULL DEFAULT 1,
+  `deadline` date DEFAULT NULL,
+  `status` enum('open','closed') NOT NULL DEFAULT 'open',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `jobs`
+--
+
+INSERT INTO `jobs` (`id`, `company_id`, `title`, `description`, `requirements`, `skills_required`, `salary`, `job_type`, `location`, `work_mode`, `vacancy_count`, `deadline`, `status`, `created_at`, `updated_at`) VALUES
+(3, 3, 'Software Developer', 'Freshers', NULL, 'C,C++', '6-7LPA', 'full-time', 'Chennai', 'onsite', 6, '2026-08-24', 'open', '2026-08-07 12:58:34', '2026-08-07 12:58:34'),
+(8, 3, 'Design Engineer', 'Divya is required', 'NEED TO BE GOOD GIRL !!', 'Patient', '3.5LPA', 'full-time', 'Karur', 'onsite', 1, '2026-08-08', 'closed', '2026-08-07 19:15:18', '2026-08-07 19:22:09');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `password_resets`
+--
+
+CREATE TABLE `password_resets` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `token_hash` varchar(255) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `saved_jobs`
+--
+
+CREATE TABLE `saved_jobs` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `student_id` int(10) UNSIGNED NOT NULL,
+  `job_id` int(10) UNSIGNED NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `saved_jobs`
+--
+
+INSERT INTO `saved_jobs` (`id`, `student_id`, `job_id`, `created_at`) VALUES
+(4, 12, 3, '2026-08-07 14:06:43'),
+(5, 19, 3, '2026-08-07 18:33:45'),
+(6, 20, 8, '2026-08-07 19:17:05');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `student_educations`
+--
+
+CREATE TABLE `student_educations` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `school_name` varchar(150) NOT NULL,
+  `degree` varchar(150) NOT NULL,
+  `gpa` varchar(20) DEFAULT NULL,
+  `duration` varchar(50) DEFAULT NULL,
+  `coursework` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `student_educations`
+--
+
+INSERT INTO `student_educations` (`id`, `user_id`, `school_name`, `degree`, `gpa`, `duration`, `coursework`, `created_at`) VALUES
+(2, 12, 'Bharathi school', 'B E CSE', '8', '2023-2027', NULL, '2026-08-08 23:08:29');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `student_experiences`
+--
+
+CREATE TABLE `student_experiences` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `role_title` varchar(150) NOT NULL,
+  `company_name` varchar(150) NOT NULL,
+  `location` varchar(150) DEFAULT NULL,
+  `start_date` varchar(50) DEFAULT NULL,
+  `end_date` varchar(50) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `student_experiences`
+--
+
+INSERT INTO `student_experiences` (`id`, `user_id`, `role_title`, `company_name`, `location`, `start_date`, `end_date`, `description`, `created_at`) VALUES
+(4, 12, 'Frontend Engineering Intern', 'Innovate Solutions', 'Remote', 'May 2022', 'Aug 2022', 'Refactored legacy vanilla JavaScript codebase to TypeScript, reducing runtime errors.\nCreated automated UI tests using Cypress, increasing test coverage by 30%.', '2026-08-08 23:09:01');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `student_profiles`
+--
+
+CREATE TABLE `student_profiles` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `education` varchar(255) DEFAULT NULL,
+  `skills` text DEFAULT NULL,
+  `bio` text DEFAULT NULL,
+  `resume_path` varchar(255) DEFAULT NULL,
+  `resume_original_name` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `headline` varchar(255) DEFAULT NULL,
+  `location` varchar(150) DEFAULT NULL,
+  `github_url` varchar(255) DEFAULT NULL,
+  `linkedin_url` varchar(255) DEFAULT NULL,
+  `portfolio_url` varchar(255) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `student_profiles`
+--
+
+INSERT INTO `student_profiles` (`id`, `user_id`, `education`, `skills`, `bio`, `resume_path`, `resume_original_name`, `created_at`, `updated_at`, `headline`, `location`, `github_url`, `linkedin_url`, `portfolio_url`) VALUES
+(6, 12, NULL, NULL, NULL, 'f3c36dda54850b2326b3e321661d9842.pdf', 'Madhan_G_Resume-2.pdf', '2026-08-07 13:19:21', '2026-08-07 14:00:40', NULL, NULL, NULL, NULL, NULL),
+(10, 19, NULL, NULL, NULL, '44b09f9912506e1bd1f86aa6fa465afc.pdf', 'Madhan Resume (2).pdf', '2026-08-07 18:33:37', '2026-08-07 18:34:16', NULL, NULL, NULL, NULL, NULL),
+(11, 20, NULL, NULL, NULL, '67fa312041aae4ea0125ee63e64af6fb.pdf', 'Madhan Resume (2).pdf', '2026-08-07 19:10:28', '2026-08-07 19:10:42', NULL, NULL, NULL, NULL, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `student_projects`
+--
+
+CREATE TABLE `student_projects` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `title` varchar(150) NOT NULL,
+  `description` text NOT NULL,
+  `thumbnail_url` varchar(555) DEFAULT NULL,
+  `tags` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `student_projects`
+--
+
+INSERT INTO `student_projects` (`id`, `user_id`, `title`, `description`, `thumbnail_url`, `tags`, `created_at`) VALUES
+(1, 12, 'FinTrack Dashboard', 'A full-stack personal finance application with real-time data visualization and expense tracking.', 'https://lh3.googleusercontent.com/aida-public/AB6AXuBtzUWSS87fsHLqr9Ma-VQIl-sG6CYMs6-pKYx9TopOmwgk0eNw8Ki_KyO0TJNZo7Lup3AuYPA1sBJ4hfFp3uBjSxpVOce6oJ7bdjUmOPgaAO53pLslM37xw7YeiLlBsEoC_oF_0iN9io9tNFZdlgVfAFf6_VQryWxqo-71KVVD1lPy-r5sglsJyD_t1M8ERZAPOIlPhidg46zpSI9F13ZUwCh1K20oDBioWb0X3EaV7QeCtKh1wHuC', 'React,Node.js', '2026-08-08 23:05:31'),
+(2, 12, 'Flow State Tasker', 'A minimalist productivity app designed with a focus on seamless user experience and distraction-free task management.', 'https://lh3.googleusercontent.com/aida-public/AB6AXuDFo3tyo7qhIXykKFS9QONfwDlIaUaXBCoB9GGCdevEeLwz4klg9r6PPH58uw53q27QGY0nGrh_ewAn1rLUjYdLlZ5LD7GkXNU9yyYrzh9d6L5-NRyThdHaYrfIRD_BjXLmrqvDUkXR5lfLUaQyvRUhl2F1zQ2SGPMMfumIhSMyMMwlluWp5vCZLCEO_pAq4f77soTfVTEBncLmpt0i_nU9HifD9KkA4m_-UkpgTMqbgnRYGIpAIGeK', 'Swift,Figma', '2026-08-08 23:05:31');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `users`
+--
+
+CREATE TABLE `users` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `role` enum('student','recruiter') NOT NULL,
+  `full_name` varchar(150) NOT NULL,
+  `email` varchar(190) NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `users`
+--
+
+INSERT INTO `users` (`id`, `role`, `full_name`, `email`, `password_hash`, `phone`, `is_active`, `created_at`, `updated_at`) VALUES
+(5, 'recruiter', 'Madhan', 'abimadhan2006@gmail.com', '$2y$10$a.rGmPgR4j9S0zaHJPxGIecHkJUf.NT6LE7a6KfSTAHxugl.XII7O', '6380839505', 1, '2026-08-07 12:56:27', '2026-08-07 12:56:27'),
+(12, 'student', 'Abi', 'madhan@gmail.com', '$2y$10$AZnngEvOepRyKrI7p4DzsOdtdcMtqiYYl0jdq02JvqFP9pZl01G1e', '6380839505', 1, '2026-08-07 13:19:21', '2026-08-08 22:58:59'),
+(19, 'student', 'Giri', 'giridhar4434@gmail.com', '$2y$10$Aura1gqiWBiYqELM32H48.akYAeGYjw/mfIsrWkqKhaCUkfDfCBpi', '6380839505', 1, '2026-08-07 18:33:37', '2026-08-07 18:33:37'),
+(20, 'student', 'Divya R', 'divyar2027@gmail.com', '$2y$10$pqv0So7qPOr2vW/7QgBuR.6gCv.zLOKSKdjG5.MwR7G023RMWEZBu', '9003400843', 1, '2026-08-07 19:10:28', '2026-08-07 19:10:28');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_education`
+--
+
+CREATE TABLE `user_education` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `institution` varchar(190) NOT NULL,
+  `degree` varchar(150) NOT NULL,
+  `field_of_study` varchar(150) DEFAULT NULL,
+  `start_year` int(10) UNSIGNED DEFAULT NULL,
+  `end_year` int(10) UNSIGNED DEFAULT NULL,
+  `grade_cgpa` varchar(50) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_experiences`
+--
+
+CREATE TABLE `user_experiences` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `job_title` varchar(150) NOT NULL,
+  `company_name` varchar(150) NOT NULL,
+  `location` varchar(150) DEFAULT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `is_current` tinyint(1) DEFAULT 0,
+  `description` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `applications`
+--
+ALTER TABLE `applications`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_application_job_student` (`job_id`,`student_id`),
+  ADD KEY `idx_applications_status` (`status`),
+  ADD KEY `idx_applications_student` (`student_id`),
+  ADD KEY `idx_applications_job` (`job_id`),
+  ADD KEY `idx_applications_interview` (`interview_at`);
+
+--
+-- Indexes for table `companies`
+--
+ALTER TABLE `companies`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_companies_user` (`user_id`);
+
+--
+-- Indexes for table `email_queue`
+--
+ALTER TABLE `email_queue`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_status_created` (`status`,`created_at`);
+
+--
+-- Indexes for table `jobs`
+--
+ALTER TABLE `jobs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_jobs_title` (`title`),
+  ADD KEY `idx_jobs_location` (`location`),
+  ADD KEY `idx_jobs_job_type` (`job_type`),
+  ADD KEY `idx_jobs_status` (`status`),
+  ADD KEY `idx_jobs_company` (`company_id`);
+
+--
+-- Indexes for table `password_resets`
+--
+ALTER TABLE `password_resets`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_password_resets_user` (`user_id`),
+  ADD KEY `idx_password_resets_token` (`token_hash`);
+
+--
+-- Indexes for table `saved_jobs`
+--
+ALTER TABLE `saved_jobs`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_saved_jobs_student_job` (`student_id`,`job_id`),
+  ADD KEY `fk_saved_jobs_job` (`job_id`),
+  ADD KEY `idx_saved_jobs_student` (`student_id`);
+
+--
+-- Indexes for table `student_educations`
+--
+ALTER TABLE `student_educations`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_student_educations_user` (`user_id`);
+
+--
+-- Indexes for table `student_experiences`
+--
+ALTER TABLE `student_experiences`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_student_experiences_user` (`user_id`);
+
+--
+-- Indexes for table `student_profiles`
+--
+ALTER TABLE `student_profiles`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_student_profiles_user` (`user_id`);
+
+--
+-- Indexes for table `student_projects`
+--
+ALTER TABLE `student_projects`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_student_projects_user` (`user_id`);
+
+--
+-- Indexes for table `users`
+--
+ALTER TABLE `users`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_users_email` (`email`),
+  ADD KEY `idx_users_role` (`role`);
+
+--
+-- Indexes for table `user_education`
+--
+ALTER TABLE `user_education`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_education_user` (`user_id`);
+
+--
+-- Indexes for table `user_experiences`
+--
+ALTER TABLE `user_experiences`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_experiences_user` (`user_id`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `applications`
+--
+ALTER TABLE `applications`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `companies`
+--
+ALTER TABLE `companies`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
+--
+-- AUTO_INCREMENT for table `email_queue`
+--
+ALTER TABLE `email_queue`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `jobs`
+--
+ALTER TABLE `jobs`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `password_resets`
+--
+ALTER TABLE `password_resets`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `saved_jobs`
+--
+ALTER TABLE `saved_jobs`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `student_educations`
+--
+ALTER TABLE `student_educations`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `student_experiences`
+--
+ALTER TABLE `student_experiences`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `student_profiles`
+--
+ALTER TABLE `student_profiles`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+
+--
+-- AUTO_INCREMENT for table `student_projects`
+--
+ALTER TABLE `student_projects`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `users`
+--
+ALTER TABLE `users`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+
+--
+-- AUTO_INCREMENT for table `user_education`
+--
+ALTER TABLE `user_education`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `user_experiences`
+--
+ALTER TABLE `user_experiences`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `applications`
+--
+ALTER TABLE `applications`
+  ADD CONSTRAINT `fk_applications_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_applications_student` FOREIGN KEY (`student_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `companies`
+--
+ALTER TABLE `companies`
+  ADD CONSTRAINT `fk_companies_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `jobs`
+--
+ALTER TABLE `jobs`
+  ADD CONSTRAINT `fk_jobs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `password_resets`
+--
+ALTER TABLE `password_resets`
+  ADD CONSTRAINT `fk_password_resets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `saved_jobs`
+--
+ALTER TABLE `saved_jobs`
+  ADD CONSTRAINT `fk_saved_jobs_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_saved_jobs_student` FOREIGN KEY (`student_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `student_educations`
+--
+ALTER TABLE `student_educations`
+  ADD CONSTRAINT `fk_student_educations_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `student_experiences`
+--
+ALTER TABLE `student_experiences`
+  ADD CONSTRAINT `fk_student_experiences_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `student_profiles`
+--
+ALTER TABLE `student_profiles`
+  ADD CONSTRAINT `fk_student_profiles_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `student_projects`
+--
+ALTER TABLE `student_projects`
+  ADD CONSTRAINT `fk_student_projects_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `user_education`
+--
+ALTER TABLE `user_education`
+  ADD CONSTRAINT `fk_user_education_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `user_experiences`
+--
+ALTER TABLE `user_experiences`
+  ADD CONSTRAINT `fk_user_experiences_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+COMMIT;
+
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

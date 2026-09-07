@@ -266,3 +266,25 @@ function page_url(int $targetPage): string
     $qs['page'] = $targetPage;
     return basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) . '?' . http_build_query($qs);
 }
+
+// ---- Auto Job Expiry Handler ----
+
+/**
+ * Automatically updates jobs whose application deadline has passed (deadline < CURDATE())
+ * from 'open' status to 'closed'. Returns the number of newly closed jobs.
+ */
+function auto_close_expired_jobs(PDO $pdo): int
+{
+    try {
+        $stmt = $pdo->prepare(
+            "UPDATE jobs 
+             SET status = 'closed', updated_at = CURRENT_TIMESTAMP 
+             WHERE status = 'open' AND deadline IS NOT NULL AND deadline < CURDATE()"
+        );
+        $stmt->execute();
+        return $stmt->rowCount();
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
