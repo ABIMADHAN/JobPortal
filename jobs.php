@@ -259,7 +259,8 @@ if (isset($_GET['id'])) {
 // ---------------------------------------------------------------
 // GET : job listing with search / filters / pagination
 // ---------------------------------------------------------------
-$filterTitle = query('title');
+$q = trim(query('q') !== '' ? query('q') : query('title'));
+$filterTitle = $q;
 $filterLocation = query('location');
 $filterJobType = query('job_type');
 $filterWorkMode = query('work_mode');
@@ -276,11 +277,12 @@ if ($savedOnly) {
 }
 
 if ($filterTitle !== '') {
-    // Two placeholders on purpose: native prepared statements (EMULATE_PREPARES
-    // off) reject the same named parameter appearing twice in one statement.
-    $where[] = '(j.title LIKE :title_a OR j.skills_required LIKE :title_b)';
-    $params[':title_a'] = '%' . $filterTitle . '%';
-    $params[':title_b'] = '%' . $filterTitle . '%';
+    $where[] = '(j.title LIKE :q_title OR c.company_name LIKE :q_comp OR j.skills_required LIKE :q_skills OR j.location LIKE :q_loc OR j.description LIKE :q_desc)';
+    $params[':q_title'] = '%' . $filterTitle . '%';
+    $params[':q_comp'] = '%' . $filterTitle . '%';
+    $params[':q_skills'] = '%' . $filterTitle . '%';
+    $params[':q_loc'] = '%' . $filterTitle . '%';
+    $params[':q_desc'] = '%' . $filterTitle . '%';
 }
 if ($filterLocation !== '') {
     $where[] = 'j.location LIKE :location';

@@ -22,7 +22,7 @@ if (is_post()) {
     }
 
     $pdo = get_db();
-    $stmt = $pdo->prepare('SELECT id, role, full_name, password_hash, is_active FROM users WHERE email = :email LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, role, full_name, profile_image, password_hash, is_active FROM users WHERE email = :email LIMIT 1');
     $stmt->execute([':email' => $email]);
     $user = $stmt->fetch();
 
@@ -36,7 +36,7 @@ if (is_post()) {
         redirect('login.php');
     }
 
-    log_in_user((int) $user['id'], $user['role'], $user['full_name']);
+    log_in_user((int) $user['id'], $user['role'], $user['full_name'], $user['profile_image'] ?? null);
     flash('Welcome back, ' . $user['full_name'] . '!');
     redirect(dashboard_url($user['role']));
 }

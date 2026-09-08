@@ -48,6 +48,7 @@ CREATE TABLE users (
     email           VARCHAR(190) NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     phone           VARCHAR(20)  DEFAULT NULL,
+    profile_image   VARCHAR(255) DEFAULT NULL,
     is_active       TINYINT(1)   NOT NULL DEFAULT 1,
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -134,8 +135,9 @@ CREATE TABLE applications (
     student_id      INT UNSIGNED NOT NULL,
     status          ENUM('applied','under_review','shortlisted','rejected','hired','withdrawn')
                         NOT NULL DEFAULT 'applied',
-    -- Interview slot set by the recruiter; drives the "Upcoming Interviews" widget.
+    -- Interview slot & Meeting URL set by recruiter
     interview_at    DATETIME DEFAULT NULL,
+    meeting_link    VARCHAR(500) DEFAULT NULL,
     notes           TEXT DEFAULT NULL,
     applied_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -202,4 +204,21 @@ CREATE TABLE IF NOT EXISTS email_queue (
     processed_at    DATETIME     DEFAULT NULL,
     INDEX idx_status_created (status, created_at)
 ) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Table: user_notifications
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_notifications (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT UNSIGNED NOT NULL,
+    title        VARCHAR(255) NOT NULL,
+    message      TEXT NOT NULL,
+    type         VARCHAR(50) NOT NULL DEFAULT 'system',
+    link         VARCHAR(255) DEFAULT NULL,
+    is_read      TINYINT(1) NOT NULL DEFAULT 0,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_read (user_id, is_read, created_at),
+    CONSTRAINT fk_user_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 

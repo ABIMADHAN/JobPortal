@@ -57,9 +57,9 @@ function status_message(string $status): string
 function application_email_context(PDO $pdo, int $applicationId): ?array
 {
     $stmt = $pdo->prepare(
-        'SELECT a.id, a.status, a.notes, a.interview_at, a.applied_at,
+        'SELECT a.id, a.status, a.notes, a.interview_at, a.meeting_link, a.applied_at, a.student_id,
                 j.id AS job_id, j.title AS job_title, j.location, j.work_mode, j.job_type,
-                c.company_name,
+                c.user_id AS recruiter_user_id, c.company_name,
                 u.full_name AS student_name, u.email AS student_email
          FROM applications a
          INNER JOIN jobs j ON a.job_id = j.id
@@ -73,11 +73,13 @@ function application_email_context(PDO $pdo, int $applicationId): ?array
     return $row ?: null;
 }
 
-/** First name only — "Hi Madhan" reads better than "Hi Madhan G". */
-function first_name(string $fullName): string
-{
-    $parts = preg_split('/\s+/', trim($fullName));
-    return $parts[0] ?? $fullName;
+if (!function_exists('first_name')) {
+    /** First name only — "Hi Madhan" reads better than "Hi Madhan G". */
+    function first_name(string $fullName): string
+    {
+        $parts = preg_split('/\s+/', trim($fullName));
+        return $parts[0] ?? $fullName;
+    }
 }
 
 // ---- The two emails -------------------------------------------------------
@@ -88,6 +90,12 @@ function notify_application_received(PDO $pdo, int $applicationId): bool
     $ctx = application_email_context($pdo, $applicationId);
     if (!$ctx) {
         return false;
+    }
+
+    // In-app notifications for both student and recruiter
+    create_notification($pdo, (int)$ctx['student_id'], 'Application Submitted', 'Your application for ' . $ctx['job_title'] . ' at ' . $ctx['company_name'] . ' was submitted.', 'application', 'student-dashboard.php');
+    if (!empty($ctx['recruiter_user_id'])) {
+        create_notification($pdo, (int)$ctx['recruiter_user_id'], 'New Candidate Application', $ctx['student_name'] . ' applied for ' . $ctx['job_title'] . '.', 'application', 'recruiter-dashboard.php?tab=applicants');
     }
 
     $content = email_hero(
@@ -143,6 +151,13 @@ function notify_application_updated(PDO $pdo, int $applicationId, array $changed
     $status = (string) $ctx['status'];
     $isInactiveStatus = in_array($status, ['rejected', 'withdrawn'], true);
 
+    // Create in-app notification for candidate
+    $notifTitle = in_array('interview', $changed, true) && !$isInactiveStatus
+        ? 'Interview Scheduled: ' . $ctx['job_title']
+        : status_headline($status);
+    $notifMsg = 'Your application for ' . $ctx['job_title'] . ' at ' . $ctx['company_name'] . ' was updated: ' . status_label($status) . '.';
+    create_notification($pdo, (int)$ctx['student_id'], $notifTitle, $notifMsg, 'status_change', 'student-dashboard.php');
+
     // If status is rejected or withdrawn, any scheduled interview is inactive.
     $interview = $isInactiveStatus ? null : $ctx['interview_at'];
     $upcoming = $interview && strtotime((string) $interview) > time();
@@ -160,17 +175,23 @@ function notify_application_updated(PDO $pdo, int $applicationId, array $changed
         . email_job_card($ctx);
 
     if ($interview) {
+        $meetingExtra = !empty($ctx['meeting_link'])
+            ? '<br><br><a href="' . e(safe_url($ctx['meeting_link'])) . '" style="display:inline-block; padding:8px 16px; background:#0284c7; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold; font-size:14px;">📹 Join Video Interview &rarr;</a>'
+            : '<br>Add it to your calendar and join a few minutes early.';
+
         $content .= email_callout(
             $status,
             $upcoming ? 'Interview scheduled' : 'Interview',
-            '<strong style="font-size:17px;">' . e(format_datetime($interview)) . '</strong>'
-                . ($upcoming ? '<br>Add it to your calendar and join a few minutes early.' : '')
+            '<strong style="font-size:17px;">' . e(format_datetime($interview)) . '</strong>' . $meetingExtra
         );
     }
 
     $rows = [['Status', email_badge(status_label($status), $status)]];
     if ($interview) {
         $rows[] = ['Interview', e(format_datetime($interview))];
+    }
+    if (!empty($ctx['meeting_link'])) {
+        $rows[] = ['Meeting Link', '<a href="' . e(safe_url($ctx['meeting_link'])) . '" style="color:#0284c7; text-decoration:underline;">' . e($ctx['meeting_link']) . '</a>'];
     }
     $rows[] = ['Applied on', e(format_datetime($ctx['applied_at']))];
     $rows[] = ['Reference', '#' . str_pad((string) $ctx['id'], 5, '0', STR_PAD_LEFT)];

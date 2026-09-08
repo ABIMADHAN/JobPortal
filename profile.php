@@ -11,6 +11,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
+ensure_profile_image_column($pdo);
 $userId = (int) current_user_id();
 $role = (string) current_user_role();
 
@@ -20,6 +21,64 @@ $role = (string) current_user_role();
 if (is_post()) {
     verify_csrf();
     $which = post('form');
+
+    // ---- Profile Picture Upload (both roles) ----
+    if ($which === 'avatar') {
+        if (!isset($_FILES['avatar_image'])) {
+            flash('No image file provided.', 'error');
+            redirect('profile.php');
+        }
+
+        $uploadError = validate_avatar_upload($_FILES['avatar_image']);
+        if ($uploadError !== '') {
+            flash($uploadError, 'error');
+            redirect('profile.php');
+        }
+
+        $ext = strtolower(pathinfo((string) $_FILES['avatar_image']['name'], PATHINFO_EXTENSION));
+        $newFilename = secure_random_filename($ext);
+
+        if (!is_dir(UPLOAD_DIR)) {
+            mkdir(UPLOAD_DIR, 0755, true);
+        }
+
+        if (!move_uploaded_file($_FILES['avatar_image']['tmp_name'], UPLOAD_DIR . $newFilename)) {
+            flash('Failed to save the uploaded image.', 'error');
+            redirect('profile.php');
+        }
+
+        // Delete old profile picture if exists
+        $stmt = $pdo->prepare('SELECT profile_image FROM users WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $userId]);
+        $old = $stmt->fetchColumn();
+        if ($old && is_file(UPLOAD_DIR . basename((string)$old))) {
+            unlink(UPLOAD_DIR . basename((string)$old));
+        }
+
+        $stmt = $pdo->prepare('UPDATE users SET profile_image = :img WHERE id = :id');
+        $stmt->execute([':img' => $newFilename, ':id' => $userId]);
+
+        $_SESSION['profile_image'] = $newFilename;
+        flash('Profile picture updated successfully.');
+        redirect('profile.php');
+    }
+
+    // ---- Remove Profile Picture ----
+    if ($which === 'remove_avatar') {
+        $stmt = $pdo->prepare('SELECT profile_image FROM users WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $userId]);
+        $old = $stmt->fetchColumn();
+        if ($old && is_file(UPLOAD_DIR . basename((string)$old))) {
+            unlink(UPLOAD_DIR . basename((string)$old));
+        }
+
+        $stmt = $pdo->prepare('UPDATE users SET profile_image = NULL WHERE id = :id');
+        $stmt->execute([':id' => $userId]);
+
+        $_SESSION['profile_image'] = null;
+        flash('Profile picture removed.');
+        redirect('profile.php');
+    }
 
     // ---- Account info (both roles) ----
     if ($which === 'account') {
@@ -178,9 +237,10 @@ if (is_post()) {
 // ---------------------------------------------------------------
 // GET: Load data
 // ---------------------------------------------------------------
-$stmt = $pdo->prepare('SELECT full_name, email, phone, designation, role FROM users WHERE id = :id LIMIT 1');
+$stmt = $pdo->prepare('SELECT full_name, email, phone, designation, role, profile_image FROM users WHERE id = :id LIMIT 1');
 $stmt->execute([':id' => $userId]);
 $user = $stmt->fetch() ?: [];
+$_SESSION['profile_image'] = $user['profile_image'] ?? null;
 
 $studentProfile = [];
 $company = [];
@@ -189,7 +249,7 @@ $stats = [
     'applicants' => 0,
     'interviews' => 0
 ];
-$profileStrength = 20; // base score
+$profileStrength = 10; // base score
 
 if ($role === 'student') {
     $stmt = $pdo->prepare(
@@ -215,6 +275,7 @@ if ($role === 'student') {
     // Calculate Student Profile Strength
     if (!empty($user['full_name'])) $profileStrength += 15;
     if (!empty($user['phone'])) $profileStrength += 15;
+    if (!empty($user['profile_image'])) $profileStrength += 10;
     if (!empty($studentProfile['education'])) $profileStrength += 15;
     if (!empty($studentProfile['skills'])) $profileStrength += 15;
     if (!empty($studentProfile['bio'])) $profileStrength += 10;
@@ -240,6 +301,7 @@ if ($role === 'student') {
     // Calculate Recruiter Profile Strength
     if (!empty($user['full_name'])) $profileStrength += 15;
     if (!empty($user['phone'])) $profileStrength += 15;
+    if (!empty($user['profile_image'])) $profileStrength += 10;
     if (!empty($user['designation'])) $profileStrength += 10;
     if (!empty($company['company_name'])) $profileStrength += 15;
     if (!empty($company['description'])) $profileStrength += 10;
@@ -507,8 +569,12 @@ require __DIR__ . '/header.php';
         <div class="card-prof" style="display: flex; flex-direction: column; gap: 1.5rem;">
             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; width: 100%;">
                 <div style="display: flex; align-items: center; gap: 1.25rem;">
-                    <div class="hero-avatar-prof">
-                        <?= e(substr($user['full_name'] ?? 'U', 0, 1)) ?>
+                    <div class="hero-avatar-prof" style="overflow: hidden; padding: 0;">
+                        <?php if (!empty($user['profile_image']) && is_file(UPLOAD_DIR . basename($user['profile_image']))): ?>
+                            <img src="uploads/<?= e(basename($user['profile_image'])) ?>" alt="<?= e($user['full_name']) ?>" style="width: 100%; height: 100%; object-fit: cover;">
+                        <?php else: ?>
+                            <?= e(substr($user['full_name'] ?? 'U', 0, 1)) ?>
+                        <?php endif; ?>
                     </div>
                     <div>
                         <div style="display: flex; align-items: center; gap: 0.625rem;">
@@ -559,6 +625,46 @@ require __DIR__ . '/header.php';
 
         <!-- Form Cards Grid -->
         <div class="grid-2-prof">
+            <!-- Profile Picture Section -->
+            <section class="card-prof" id="profile-picture">
+                <h3 style="font-size: 1rem; font-weight: 700; color: var(--slate-900); margin-bottom: 0.25rem;">Profile Picture</h3>
+                <p style="font-size: 0.75rem; color: var(--slate-500); margin-bottom: 1.25rem;">Upload a photo to personalize your account avatar</p>
+
+                <div style="display: flex; align-items: center; gap: 1.25rem; margin-bottom: 1.25rem;">
+                    <div style="width: 72px; height: 72px; border-radius: 1rem; overflow: hidden; background: linear-gradient(135deg, var(--brand-600), #4338ca); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2); border: 2px solid var(--slate-100);">
+                        <?php if (!empty($user['profile_image']) && is_file(UPLOAD_DIR . basename($user['profile_image']))): ?>
+                            <img src="uploads/<?= e(basename($user['profile_image'])) ?>" alt="<?= e($user['full_name']) ?>" style="width: 100%; height: 100%; object-fit: cover;">
+                        <?php else: ?>
+                            <?= e(substr($user['full_name'] ?? 'U', 0, 1)) ?>
+                        <?php endif; ?>
+                    </div>
+                    <div style="flex: 1;">
+                        <h4 style="font-size: 0.875rem; font-weight: 600; color: var(--slate-800); margin: 0 0 0.25rem 0;">User Avatar</h4>
+                        <p style="font-size: 0.75rem; color: var(--slate-500); margin: 0;">Supported formats: JPG, PNG, WEBP, GIF (Max 2MB)</p>
+                    </div>
+                </div>
+
+                <form method="POST" action="profile.php" enctype="multipart/form-data" style="margin-bottom: 0.75rem;">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="form" value="avatar">
+                    <div class="form-group-prof">
+                        <label class="form-label-prof" for="avatar_image">Upload New Picture</label>
+                        <input class="input-control-prof" id="avatar_image" name="avatar_image" type="file" accept="image/png, image/jpeg, image/webp, image/gif" required>
+                    </div>
+                    <button class="btn-primary-prof" type="submit" style="width: 100%; margin-top: 0.25rem;">Upload Photo</button>
+                </form>
+
+                <?php if (!empty($user['profile_image'])): ?>
+                    <form method="POST" action="profile.php">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="form" value="remove_avatar">
+                        <button type="submit" style="width: 100%; padding: 0.5rem; border-radius: 0.75rem; font-size: 0.8125rem; font-weight: 600; color: var(--rose-600); background: var(--rose-50); border: 1px solid rgba(244, 63, 94, 0.2); cursor: pointer; transition: all 0.2s;">
+                            Remove Picture
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </section>
+
             <!-- Account Info -->
             <section class="card-prof" id="personal-info">
                 <h3 style="font-size: 1rem; font-weight: 700; color: var(--slate-900); margin-bottom: 0.25rem;">Account Information</h3>

@@ -64,6 +64,15 @@ define('RESUME_ALLOWED_MIME', [
 ]);
 define('RESUME_ALLOWED_EXT', ['pdf', 'doc', 'docx']);
 
+define('AVATAR_MAX_SIZE', 2 * 1024 * 1024); // 2MB
+define('AVATAR_ALLOWED_MIME', [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+]);
+define('AVATAR_ALLOWED_EXT', ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+
 // ---- Error display ----
 if (APP_ENV === 'local') {
     ini_set('display_errors', '1');

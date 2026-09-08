@@ -11,6 +11,7 @@ require_once __DIR__ . '/auth.php';
 require_role('recruiter');
 
 $pdo = get_db();
+ensure_meeting_link_column($pdo);
 auto_close_expired_jobs($pdo);
 
 $company = get_owned_company($pdo, (int) current_user_id());
@@ -189,10 +190,12 @@ if (is_post()) {
 
   // ---- Update an applicant's status ----
   if ($action === 'update_application') {
+    ensure_meeting_link_column($pdo);
     $applicationId = (int) ($_POST['application_id'] ?? 0);
     $status = post('status');
     $notes = post('notes');
     $interviewAt = post('interview_at');
+    $meetingLink = safe_url(post('meeting_link'));
 
     if (!isset(APPLICATION_STATUSES[$status])) {
       flash('Invalid status value.', 'error');
@@ -210,7 +213,7 @@ if (is_post()) {
     }
 
     $stmt = $pdo->prepare(
-      'SELECT a.status, a.notes, a.interview_at
+      'SELECT a.status, a.notes, a.interview_at, a.meeting_link
              FROM applications a
              INNER JOIN jobs j ON a.job_id = j.id
              WHERE a.id = :id AND j.company_id = :company_id LIMIT 1'
@@ -218,18 +221,17 @@ if (is_post()) {
     $stmt->execute([':id' => $applicationId, ':company_id' => $companyId]);
     $before = $stmt->fetch();
 
-
-
     $stmt = $pdo->prepare(
       'UPDATE applications a
              INNER JOIN jobs j ON a.job_id = j.id
-             SET a.status = :status, a.notes = :notes, a.interview_at = :interview_at
+             SET a.status = :status, a.notes = :notes, a.interview_at = :interview_at, a.meeting_link = :meeting_link
              WHERE a.id = :id AND j.company_id = :company_id'
     );
     $stmt->execute([
       ':status' => $status,
       ':notes' => $notes,
       ':interview_at' => $interviewValue,
+      ':meeting_link' => $meetingLink !== '' ? $meetingLink : null,
       ':id' => $applicationId,
       ':company_id' => $companyId,
     ]);
@@ -260,10 +262,12 @@ if (is_post()) {
 
   // ---- Bulk Action on Candidates ----
   if ($action === 'bulk_action') {
+    ensure_meeting_link_column($pdo);
     $appIds = $_POST['application_ids'] ?? [];
     $bulkStatus = post('bulk_status');
     $bulkNotes = post('bulk_notes');
     $bulkInterviewAt = post('bulk_interview_at');
+    $bulkMeetingLink = safe_url(post('bulk_meeting_link'));
 
     if (!is_array($appIds) || empty($appIds)) {
       flash('Please select at least one candidate for bulk action.', 'error');
@@ -285,6 +289,7 @@ if (is_post()) {
     $cleanIds = array_map('intval', $appIds);
     $hasNotes = $bulkNotes !== '' ? 1 : 0;
     $hasInterview = $interviewValue !== null ? 1 : 0;
+    $hasMeetingLink = $bulkMeetingLink !== '' ? 1 : 0;
 
     $inPlaceholders = [];
     $execParams = [
@@ -293,6 +298,8 @@ if (is_post()) {
       ':notes' => $bulkNotes,
       ':has_interview' => $hasInterview,
       ':interview_at' => $interviewValue,
+      ':has_meeting_link' => $hasMeetingLink,
+      ':meeting_link' => $bulkMeetingLink !== '' ? $bulkMeetingLink : null,
       ':company_id' => $companyId,
     ];
 
@@ -301,6 +308,8 @@ if (is_post()) {
       $inPlaceholders[] = $pName;
       $execParams[$pName] = $id;
     }
+
+    $inClause = implode(',', $inPlaceholders);
 
     // Find matching application IDs for this recruiter's company
     $stmtValid = $pdo->prepare(
@@ -317,9 +326,11 @@ if (is_post()) {
          INNER JOIN jobs j ON a.job_id = j.id
          SET a.status = :status,
              a.notes = CASE WHEN :has_notes = 1 THEN :notes ELSE a.notes END,
-             a.interview_at = CASE WHEN :has_interview = 1 THEN :interview_at ELSE a.interview_at END
+             a.interview_at = CASE WHEN :has_interview = 1 THEN :interview_at ELSE a.interview_at END,
+             a.meeting_link = CASE WHEN :has_meeting_link = 1 THEN :meeting_link ELSE a.meeting_link END
          WHERE a.id IN ({$inClause}) AND j.company_id = :company_id"
       );
+      $stmt->execute($execParams);
       $stmt->execute($execParams);
 
       require_once __DIR__ . '/notifications.php';
@@ -378,6 +389,7 @@ $jobs = $stmt->fetchAll();
 // Applicants list with filters
 $filterJobId = (int) query('job_id');
 $filterStatus = query('status');
+$filterQuery = trim(query('q'));
 
 $where = ['j.company_id = :company_id'];
 $params = [':company_id' => $companyId];
@@ -386,17 +398,21 @@ if ($filterJobId > 0) {
   $where[] = 'a.job_id = :job_id';
   $params[':job_id'] = $filterJobId;
 }
-if (isset(APPLICATION_STATUSES[$filterStatus])) {
-  $where[] = 'a.status = :status';
-  $params[':status'] = $filterStatus;
-} else {
+if (!isset(APPLICATION_STATUSES[$filterStatus])) {
   $filterStatus = '';
+}
+if ($filterQuery !== '') {
+  $where[] = '(u.full_name LIKE :q_name OR u.email LIKE :q_email OR j.title LIKE :q_title OR sp.skills LIKE :q_skills)';
+  $params[':q_name'] = '%' . $filterQuery . '%';
+  $params[':q_email'] = '%' . $filterQuery . '%';
+  $params[':q_title'] = '%' . $filterQuery . '%';
+  $params[':q_skills'] = '%' . $filterQuery . '%';
 }
 
 $whereSql = implode(' AND ', $where);
 
 $stmt = $pdo->prepare(
-  "SELECT a.id AS application_id, a.status, a.notes, a.applied_at, a.interview_at,
+  "SELECT a.id AS application_id, a.status, a.notes, a.applied_at, a.interview_at, a.meeting_link,
             j.title AS job_title, j.skills_required,
             u.full_name, u.email, u.phone,
             sp.education, sp.skills, sp.bio, sp.resume_path, sp.resume_original_name
@@ -451,7 +467,7 @@ foreach ($applicants as $app) {
     ];
 }
 
-$interviews = upcoming_interviews($pdo);
+$interviews = upcoming_interviews($pdo, 15);
 
 // Tab & Modal State
 $tab = match (query('tab')) {
@@ -684,20 +700,21 @@ require __DIR__ . '/header.php';
   border-radius: 0.5rem;
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--slate-500);
+  color: var(--slate-600);
   background: transparent;
   border: none;
   cursor: pointer;
   text-decoration: none;
+  font-family: inherit;
   transition: all 0.15s;
 }
 .tab-item-rec:hover {
-  color: var(--slate-800);
+  color: var(--slate-900);
   background: var(--slate-100);
 }
 .tab-item-rec.active {
-  background: var(--slate-900);
-  color: #ffffff;
+  background: var(--slate-900) !important;
+  color: #ffffff !important;
 }
 
 .filter-pills-rec {
@@ -837,6 +854,8 @@ require __DIR__ . '/header.php';
   font-size: 0.75rem;
   font-weight: 600;
   gap: 0.375rem;
+  white-space: nowrap;
+  text-transform: capitalize;
 }
 .badge-rec.badge-sky { background: var(--sky-100); color: var(--sky-700); }
 .badge-rec.badge-purple { background: var(--purple-100); color: var(--purple-700); }
@@ -849,6 +868,7 @@ require __DIR__ . '/header.php';
   height: 0.375rem;
   border-radius: 50%;
   background: currentColor;
+  flex-shrink: 0;
 }
 
 .text-bold-rec { font-weight: 600; color: var(--slate-900); }
@@ -860,8 +880,10 @@ require __DIR__ . '/header.php';
   font-weight: 500;
   color: var(--slate-600);
   background: var(--slate-100);
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.625rem;
   border-radius: 0.375rem;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .bottom-grid-rec {
@@ -968,10 +990,9 @@ require __DIR__ . '/header.php';
 }
 </style>
 
-<main class="canvas">
-    <div class="dashboard-container">
-        <!-- Page Header -->
-        <div class="page-header-rec">
+<div class="dashboard-container" style="width: 100%;">
+    <!-- Page Header -->
+    <div class="page-header-rec">
             <div>
                 <h1 class="page-title-rec">Hiring Pipeline</h1>
                 <p class="page-subtitle-rec">Move candidates through your stages and schedule interviews in structured view.</p>
@@ -1020,22 +1041,22 @@ require __DIR__ . '/header.php';
         <div class="card-rec">
             <div class="table-header-nav-rec">
                 <nav class="tab-menu-rec">
-                    <a href="recruiter-dashboard.php?tab=pipeline" class="tab-item-rec <?= $tab === 'pipeline' ? 'active' : '' ?>">Pipeline Table</a>
-                    <a href="recruiter-dashboard.php?tab=jobs" class="tab-item-rec <?= $tab === 'jobs' ? 'active' : '' ?>">My Jobs</a>
-                    <a href="recruiter-dashboard.php?tab=applicants" class="tab-item-rec <?= $tab === 'applicants' ? 'active' : '' ?>">All Applicants</a>
+                    <button type="button" data-tab="pipeline" onclick="switchRecruiterTabSPA(event, 'pipeline')" class="tab-item-rec <?= $tab === 'pipeline' ? 'active' : '' ?>">Pipeline Table</button>
+                    <button type="button" data-tab="jobs" onclick="switchRecruiterTabSPA(event, 'jobs')" class="tab-item-rec <?= $tab === 'jobs' ? 'active' : '' ?>">My Jobs</button>
+                    <button type="button" data-tab="applicants" onclick="switchRecruiterTabSPA(event, 'applicants')" class="tab-item-rec <?= $tab === 'applicants' ? 'active' : '' ?>">All Applicants</button>
                 </nav>
                 <div class="filter-pills-rec">
-                    <a href="recruiter-dashboard.php?tab=applicants" class="pill-rec <?= $filterStatus === '' ? 'pill-dark' : '' ?>">All (<?= count($candidateItems) ?>)</a>
-                    <a href="recruiter-dashboard.php?tab=applicants&status=applied" class="pill-rec <?= $filterStatus === 'applied' ? 'pill-dark' : '' ?>">Applied</a>
-                    <a href="recruiter-dashboard.php?tab=applicants&status=under_review" class="pill-rec pill-sky">Under Review</a>
-                    <a href="recruiter-dashboard.php?tab=applicants&status=shortlisted" class="pill-rec pill-purple">Shortlisted</a>
-                    <a href="recruiter-dashboard.php?tab=applicants&status=hired" class="pill-rec pill-emerald">Hired</a>
-                    <a href="recruiter-dashboard.php?tab=applicants&status=rejected" class="pill-rec pill-rose">Rejected</a>
+                    <button type="button" class="pill-rec <?= $filterStatus === '' ? 'pill-dark active' : '' ?>" onclick="filterStatusSPA(event, 'all')">All (<?= count($candidateItems) ?>)</button>
+                    <button type="button" class="pill-rec <?= $filterStatus === 'applied' ? 'pill-dark active' : '' ?>" onclick="filterStatusSPA(event, 'applied')">Applied</button>
+                    <button type="button" class="pill-rec pill-sky <?= $filterStatus === 'under_review' ? 'active' : '' ?>" onclick="filterStatusSPA(event, 'under_review')">Under Review</button>
+                    <button type="button" class="pill-rec pill-purple <?= $filterStatus === 'shortlisted' ? 'active' : '' ?>" onclick="filterStatusSPA(event, 'shortlisted')">Shortlisted</button>
+                    <button type="button" class="pill-rec pill-emerald <?= $filterStatus === 'hired' ? 'active' : '' ?>" onclick="filterStatusSPA(event, 'hired')">Hired</button>
+                    <button type="button" class="pill-rec pill-rose <?= $filterStatus === 'rejected' ? 'active' : '' ?>" onclick="filterStatusSPA(event, 'rejected')">Rejected</button>
                 </div>
             </div>
 
-            <?php if ($tab === 'jobs'): ?>
-                <!-- ---------- Jobs Table ---------- -->
+            <!-- ---------- Jobs Table View Container ---------- -->
+            <div id="rec-tab-view-jobs" style="<?= $tab === 'jobs' ? '' : 'display: none;' ?>">
                 <div style="padding: 1rem 1.5rem;">
                     <?php if (empty($jobs)): ?>
                         <p style="text-align:center; padding: 2rem 0; color: var(--slate-500);">No jobs posted yet. Click <strong>Post a Job</strong> to get started.</p>
@@ -1100,13 +1121,14 @@ require __DIR__ . '/header.php';
                         </table>
                     <?php endif; ?>
                 </div>
+            </div>
 
-            <?php else: ?>
-                <!-- ---------- Candidates / Pipeline Table ---------- -->
+            <!-- ---------- Candidates / Pipeline Table View Container ---------- -->
+            <div id="rec-tab-view-candidates" style="<?= $tab !== 'jobs' ? '' : 'display: none;' ?>">
                 <div class="table-toolbar-rec">
                     <div class="search-box-rec">
                         <svg class="search-icon-rec" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
-                        <input type="text" id="candidateSearch" placeholder="Search candidate by name, role, skills..."/>
+                        <input type="text" id="candidateSearch" placeholder="Search candidate by name, role, skills..." value="<?= e($filterQuery) ?>"/>
                     </div>
                     <form method="get" action="recruiter-dashboard.php" class="filter-controls-rec">
                         <input type="hidden" name="tab" value="<?= e($tab) ?>">
@@ -1118,8 +1140,8 @@ require __DIR__ . '/header.php';
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <select name="status" class="select-control-rec" onchange="this.form.submit()">
-                            <option value="">Filter Stage: All</option>
+                        <select id="statusSelectFilter" name="status" class="select-control-rec" onchange="filterStatusSPA(event, this.value)">
+                            <option value="all">Filter Stage: All</option>
                             <?php foreach (APPLICATION_STATUSES as $val => $lbl): ?>
                                 <option value="<?= e($val) ?>" <?= $filterStatus === $val ? 'selected' : '' ?>><?= e($lbl) ?></option>
                             <?php endforeach; ?>
@@ -1132,6 +1154,7 @@ require __DIR__ . '/header.php';
                     <input type="hidden" name="action" value="bulk_action">
                     <input type="hidden" name="bulk_status" id="bulkStatusInput" value="">
                     <input type="hidden" name="bulk_interview_at" id="bulkInterviewInput" value="">
+                    <input type="hidden" name="bulk_meeting_link" id="bulkMeetingLinkInput" value="">
                     <input type="hidden" name="bulk_notes" id="bulkNotesInput" value="">
 
                     <div style="overflow-x: auto;">
@@ -1144,15 +1167,15 @@ require __DIR__ . '/header.php';
                                         <th style="width: 40px;"><input type="checkbox" id="selectAllCandidates"/></th>
                                         <th>Candidate</th>
                                         <th>Role Applied</th>
-                                        <th>Current Stage</th>
+                                        <th style="white-space: nowrap;">Current Stage</th>
                                         <th>Match &amp; Education</th>
-                                        <th>Next Step</th>
+                                        <th style="white-space: nowrap;">Next Step</th>
                                         <th style="text-align: right;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($candidateItems as $candidate): ?>
-                                    <tr>
+                                    <tr data-status="<?= e($candidate['raw_status']) ?>">
                                         <td><input type="checkbox" name="application_ids[]" value="<?= (int) $candidate['id'] ?>" class="candidate-checkbox"/></td>
                                         <td>
                                             <div class="candidate-profile-rec">
@@ -1169,7 +1192,7 @@ require __DIR__ . '/header.php';
                                             <span class="tag-role-rec"><?= e($candidate['role']) ?></span>
                                             <div class="text-subtle-rec"><?= e($candidate['applied']) ?></div>
                                         </td>
-                                        <td>
+                                        <td style="white-space: nowrap;">
                                             <span class="badge-rec <?= e($candidate['stage_badge']) ?>">
                                                 <span class="badge-dot-rec"></span>
                                                 <?= e($candidate['stage']) ?>
@@ -1179,7 +1202,7 @@ require __DIR__ . '/header.php';
                                             <div class="text-bold-rec"><?= e($candidate['exp']) ?></div>
                                             <div class="text-match-rec"><?= e($candidate['match']) ?></div>
                                         </td>
-                                        <td>
+                                        <td style="white-space: nowrap;">
                                             <span class="next-step-tag-rec"><?= e($candidate['next_step']) ?></span>
                                         </td>
                                         <td style="text-align: right;">
@@ -1216,7 +1239,7 @@ require __DIR__ . '/header.php';
                         </div>
                     </div>
                 </form>
-            <?php endif; ?>
+            </div>
         </div>
 
         <!-- Bottom Analytics Grid -->
@@ -1240,13 +1263,15 @@ require __DIR__ . '/header.php';
                         <a href="recruiter-dashboard.php?tab=applicants" class="btn-rec btn-rec-secondary" style="font-size: 0.75rem; display: inline-flex;">+ Review Applicants</a>
                     </div>
                 <?php else: ?>
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                        <?php foreach ($interviews as $inv): ?>
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 260px; overflow-y: auto; padding-right: 0.375rem; scrollbar-width: thin;">
+                        <?php foreach ($interviews as $inv):
+                            $personName = (string) ($inv['full_name'] ?? $inv['person'] ?? 'Candidate');
+                        ?>
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--slate-50); border-radius: 0.75rem; border: 1px solid var(--slate-200);">
                                 <div style="display: flex; align-items: center; gap: 0.75rem;">
-                                    <div class="avatar-circle-rec"><?= e(initials($inv['full_name'])) ?></div>
+                                    <div class="avatar-circle-rec"><?= e(initials($personName)) ?></div>
                                     <div>
-                                        <div class="candidate-name-rec"><?= e($inv['full_name']) ?></div>
+                                        <div class="candidate-name-rec"><?= e($personName) ?></div>
                                         <div class="text-subtle-rec"><?= e($inv['job_title']) ?></div>
                                     </div>
                                 </div>
@@ -1280,7 +1305,6 @@ require __DIR__ . '/header.php';
             </div>
         </section>
     </div>
-</main>
 
 <!-- ---------- Post / Edit Job Dialog ---------- -->
 <?php if ($showJobDialog): ?>
@@ -1433,10 +1457,17 @@ require __DIR__ . '/header.php';
           </div>
         </div>
 
+        <div class="form-group" style="margin-top: 0.5rem;">
+          <label for="meeting_link">Meeting / Interview Link (Google Meet, Zoom, Teams)</label>
+          <input type="url" id="meeting_link" name="meeting_link" placeholder="e.g. https://meet.google.com/abc-defg-hij or Zoom link"
+                 value="<?= e($reviewApplicant['meeting_link'] ?? '') ?>">
+          <div class="form-hint">Candidate will see a "Join Meeting" button directly on their dashboard and email.</div>
+        </div>
+
         <div class="form-group">
-          <label for="review_notes">Internal Notes</label>
+          <label for="review_notes">Internal Notes &amp; Candidate Instructions</label>
           <textarea id="review_notes" name="notes" rows="2"
-                    placeholder="Notes visible only to your team"><?= e($reviewApplicant['notes'] ?? '') ?></textarea>
+                    placeholder="Notes visible to hiring team and candidate"><?= e($reviewApplicant['notes'] ?? '') ?></textarea>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block">Save Changes</button>
@@ -1496,6 +1527,9 @@ require __DIR__ . '/header.php';
         <label for="modal_bulk_interview_at" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--slate-700);">Interview Date &amp; Time (Optional)</label>
         <input type="datetime-local" id="modal_bulk_interview_at" class="input-control-prof">
         <div class="form-hint">Assign an interview slot for all selected candidates.</div>
+
+        <label for="modal_bulk_meeting_link" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--slate-700); margin-top: 0.75rem;">Meeting / Interview Link (Optional)</label>
+        <input type="url" id="modal_bulk_meeting_link" class="input-control-prof" placeholder="e.g. https://meet.google.com/abc-defg-hij">
       </div>
 
       <div class="form-group" style="margin-bottom: 0.5rem;">
@@ -1572,10 +1606,14 @@ function confirmAndSubmitBulkAction() {
         document.getElementById('bulkStatusInput').value = pendingBulkStatus;
 
         const modalInterview = document.getElementById('modal_bulk_interview_at');
+        const modalMeeting = document.getElementById('modal_bulk_meeting_link');
         const modalNotes = document.getElementById('modal_bulk_notes');
 
         if (modalInterview) {
             document.getElementById('bulkInterviewInput').value = modalInterview.value;
+        }
+        if (modalMeeting) {
+            document.getElementById('bulkMeetingLinkInput').value = modalMeeting.value;
         }
         if (modalNotes) {
             document.getElementById('bulkNotesInput').value = modalNotes.value;
@@ -1585,16 +1623,133 @@ function confirmAndSubmitBulkAction() {
     }
 }
 
+function filterStatusSPA(event, targetStatus) {
+    if (event) event.preventDefault();
+    targetStatus = targetStatus || 'all';
+
+    // Push URL state for bookmarking/history without reload
+    const url = new URL(window.location);
+    if (targetStatus && targetStatus !== 'all') {
+        url.searchParams.set('status', targetStatus);
+    } else {
+        url.searchParams.delete('status');
+    }
+    window.history.pushState({}, '', url);
+
+    // Update Pills UI active state
+    const pills = document.querySelectorAll('.filter-pills-rec .pill-rec');
+    pills.forEach(pill => pill.classList.remove('pill-dark', 'active'));
+
+    if (event && event.currentTarget && event.currentTarget.classList.contains('pill-rec')) {
+        event.currentTarget.classList.add('pill-dark', 'active');
+    } else {
+        pills.forEach(pill => {
+            const text = pill.textContent.toLowerCase().trim();
+            const cleanTarget = targetStatus.replace('_', ' ');
+            if ((targetStatus === 'all' && text.startsWith('all')) || text.includes(cleanTarget)) {
+                pill.classList.add('pill-dark', 'active');
+            }
+        });
+    }
+
+    // Sync Select Dropdown
+    const selectElem = document.getElementById('statusSelectFilter');
+    if (selectElem && selectElem.value !== targetStatus) {
+        selectElem.value = targetStatus === 'all' ? 'all' : targetStatus;
+    }
+
+    // Filter candidate table rows
+    const searchInput = document.getElementById('candidateSearch');
+    const searchQuery = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const tableRows = document.querySelectorAll('.data-table-rec tbody tr');
+
+    tableRows.forEach(row => {
+        const rowStatus = row.getAttribute('data-status');
+        const text = row.textContent.toLowerCase();
+
+        const matchesStatus = (targetStatus === 'all' || rowStatus === targetStatus);
+        const matchesSearch = (!searchQuery || text.includes(searchQuery));
+
+        row.style.display = (matchesStatus && matchesSearch) ? '' : 'none';
+    });
+}
+
+function switchRecruiterTabSPA(event, tabName) {
+    if (event) event.preventDefault();
+    tabName = tabName || 'pipeline';
+
+    const jobsView = document.getElementById('rec-tab-view-jobs');
+    const candidatesView = document.getElementById('rec-tab-view-candidates');
+
+    if (tabName === 'jobs') {
+        if (jobsView) jobsView.style.display = 'block';
+        if (candidatesView) candidatesView.style.display = 'none';
+    } else {
+        if (jobsView) jobsView.style.display = 'none';
+        if (candidatesView) candidatesView.style.display = 'block';
+    }
+
+    // Update active tab button style
+    document.querySelectorAll('.tab-menu-rec .tab-item-rec').forEach(btn => {
+        const btnTab = btn.getAttribute('data-tab');
+        btn.classList.toggle('active', btnTab === tabName);
+    });
+
+    // Update active sidebar link style
+    document.querySelectorAll('.sidebar .nav-group a').forEach(link => {
+        if (link.href && link.href.includes('recruiter-dashboard.php')) {
+            if (tabName === 'jobs' && link.href.includes('tab=jobs')) {
+                link.classList.add('active');
+            } else if (tabName === 'pipeline' && link.href.includes('tab=pipeline')) {
+                link.classList.add('active');
+            } else if (tabName === 'applicants' && link.href.includes('tab=applicants')) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        }
+    });
+
+    // Push URL without page reload
+    const url = new URL(window.location);
+    url.searchParams.set('tab', tabName);
+    window.history.pushState({}, '', url);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    const initialStatus = '<?= e($filterStatus) ?>';
+    if (initialStatus) {
+        filterStatusSPA(null, initialStatus);
+    }
+
+    // Intercept sidebar rail clicks for tab switching without page reload
+    document.querySelectorAll('.sidebar a[href*="recruiter-dashboard.php"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            if (window.location.pathname.endsWith('recruiter-dashboard.php')) {
+                const urlParams = new URLSearchParams(this.search);
+                const tab = urlParams.get('tab') || 'pipeline';
+                e.preventDefault();
+                switchRecruiterTabSPA(e, tab);
+            }
+        });
+    });
+
     const searchInput = document.getElementById('candidateSearch');
     const tableRows = document.querySelectorAll('.data-table-rec tbody tr');
     
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             const query = e.target.value.toLowerCase().trim();
+            const selectElem = document.getElementById('statusSelectFilter');
+            const targetStatus = selectElem ? selectElem.value : 'all';
+
             tableRows.forEach(row => {
+                const rowStatus = row.getAttribute('data-status');
                 const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(query) ? '' : 'none';
+                const matchesStatus = (targetStatus === 'all' || rowStatus === targetStatus);
+                const matchesSearch = (!query || text.includes(query));
+
+                row.style.display = (matchesStatus && matchesSearch) ? '' : 'none';
             });
         });
     }

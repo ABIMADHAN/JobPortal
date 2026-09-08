@@ -58,10 +58,10 @@ function datetime_local(?string $value): string
     return $ts ? date('Y-m-d\TH:i', $ts) : '';
 }
 
-/** "under_review" -> "under review" */
+/** "under_review" -> "Under Review" */
 function status_label(?string $status): string
 {
-    return str_replace('_', ' ', (string) $status);
+    return ucwords(str_replace('_', ' ', (string) $status));
 }
 
 /** First letter of a name, for avatar chips. */
@@ -69,6 +69,15 @@ function initials(string $name): string
 {
     $name = trim($name);
     return $name === '' ? '?' : mb_strtoupper(mb_substr($name, 0, 1));
+}
+
+/** First name only — "Hi Madhan" reads better than "Hi Madhan G". */
+if (!function_exists('first_name')) {
+    function first_name(string $fullName): string
+    {
+        $parts = preg_split('/\s+/', trim($fullName));
+        return $parts[0] ?? $fullName;
+    }
 }
 
 /** Stable accent colour for a logo tile, derived from the name so it never flickers. */
@@ -247,6 +256,49 @@ function validate_resume_upload(array $file): string
     return '';
 }
 
+/** Returns an error message, or '' when the profile image upload is valid. */
+function validate_avatar_upload(array $file): string
+{
+    if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return 'Image upload failed. Please try again.';
+    }
+    if ($file['size'] > AVATAR_MAX_SIZE) {
+        return 'Image exceeds the maximum size of 2MB.';
+    }
+
+    $ext = strtolower(pathinfo((string) $file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, AVATAR_ALLOWED_EXT, true)) {
+        return 'Invalid image extension. Allowed: JPG, JPEG, PNG, WEBP, GIF.';
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mime, AVATAR_ALLOWED_MIME, true)) {
+        return 'Invalid image file type detected.';
+    }
+
+    return '';
+}
+
+/** Ensure the users table has the profile_image column if it doesn't already exist. */
+function ensure_profile_image_column(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'profile_image'");
+        if ($stmt->fetch() === false) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL AFTER phone");
+        }
+    } catch (Exception $e) {
+        // Silently catch if column exists or schema differs
+    }
+}
+
 // ---- Pagination ----
 
 /** @return array{0:int,1:int,2:int} [page, limit, offset] */
@@ -283,6 +335,87 @@ function auto_close_expired_jobs(PDO $pdo): int
         );
         $stmt->execute();
         return $stmt->rowCount();
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
+/** Dynamically ensure 'meeting_link' column exists in applications table. */
+function ensure_meeting_link_column(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'meeting_link'");
+        if (!$stmt->fetch()) {
+            $pdo->exec("ALTER TABLE applications ADD COLUMN meeting_link VARCHAR(500) DEFAULT NULL AFTER interview_at");
+        }
+    } catch (Exception $e) {
+        // Silently ignore schema errors
+    }
+}
+
+// ---- Notifications Center Helpers ----
+
+/** Ensures the user_notifications table exists in the database. */
+function ensure_notifications_table(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS user_notifications (
+                id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                user_id      INT UNSIGNED NOT NULL,
+                title        VARCHAR(255) NOT NULL,
+                message      TEXT NOT NULL,
+                type         VARCHAR(50) NOT NULL DEFAULT 'system',
+                link         VARCHAR(255) DEFAULT NULL,
+                is_read      TINYINT(1) NOT NULL DEFAULT 0,
+                created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_user_read (user_id, is_read, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    } catch (Exception $e) {
+        // Silently continue if table creation fails
+    }
+}
+
+/** Create a new in-app notification for a user. */
+function create_notification(PDO $pdo, int $userId, string $title, string $message, string $type = 'system', ?string $link = null): bool
+{
+    ensure_notifications_table($pdo);
+    try {
+        $stmt = $pdo->prepare(
+            'INSERT INTO user_notifications (user_id, title, message, type, link)
+             VALUES (:uid, :title, :message, :type, :link)'
+        );
+        return $stmt->execute([
+            ':uid' => $userId,
+            ':title' => $title,
+            ':message' => $message,
+            ':type' => $type,
+            ':link' => $link,
+        ]);
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+/** Get unread notification count for user. */
+function get_unread_notification_count(PDO $pdo, ?int $userId = null): int
+{
+    $userId = $userId ?? (isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null);
+    if (!$userId) return 0;
+    ensure_notifications_table($pdo);
+    try {
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM user_notifications WHERE user_id = :uid AND is_read = 0');
+        $stmt->execute([':uid' => $userId]);
+        return (int) $stmt->fetchColumn();
     } catch (Exception $e) {
         return 0;
     }

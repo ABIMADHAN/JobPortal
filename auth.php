@@ -24,6 +24,11 @@ function current_user_name(): string
     return (string) ($_SESSION['full_name'] ?? '');
 }
 
+function current_user_avatar(): ?string
+{
+    return $_SESSION['profile_image'] ?? null;
+}
+
 function is_logged_in(): bool
 {
     return current_user_id() !== null;
@@ -60,12 +65,13 @@ function require_guest(): void
     }
 }
 
-function log_in_user(int $userId, string $role, string $fullName): void
+function log_in_user(int $userId, string $role, string $fullName, ?string $profileImage = null): void
 {
     session_regenerate_id(true);
     $_SESSION['user_id'] = $userId;
     $_SESSION['role'] = $role;
     $_SESSION['full_name'] = $fullName;
+    $_SESSION['profile_image'] = $profileImage;
 }
 
 function log_out_user(): void
@@ -104,7 +110,7 @@ function notification_count(PDO $pdo): int
              WHERE student_id = :uid
                AND status NOT IN ("withdrawn", "rejected")
                AND (status IN ("shortlisted", "hired")
-                    OR (interview_at IS NOT NULL AND interview_at >= NOW()))'
+                    OR (interview_at IS NOT NULL AND interview_at >= CURDATE()))'
         );
     }
 
@@ -127,24 +133,24 @@ function upcoming_interviews(PDO $pdo, int $limit = 4): array
 
     if (current_user_role() === 'recruiter') {
         $sql = "SELECT a.id, a.interview_at, j.title AS job_title,
-                       u.full_name AS person, 'Candidate' AS person_role
+                       u.full_name, u.full_name AS person, 'Candidate' AS person_role
                 FROM applications a
                 INNER JOIN jobs j ON a.job_id = j.id
                 INNER JOIN companies c ON j.company_id = c.id
                 INNER JOIN users u ON a.student_id = u.id
                 WHERE c.user_id = :uid
-                  AND a.interview_at IS NOT NULL AND a.interview_at >= NOW()
+                  AND a.interview_at IS NOT NULL AND a.interview_at >= CURDATE()
                   AND a.status NOT IN ('withdrawn', 'rejected')
                 ORDER BY a.interview_at ASC
                 LIMIT $limit";
     } else {
         $sql = "SELECT a.id, a.interview_at, j.title AS job_title,
-                       c.company_name AS person, 'Hiring company' AS person_role
+                       c.company_name AS full_name, c.company_name AS person, 'Hiring company' AS person_role
                 FROM applications a
                 INNER JOIN jobs j ON a.job_id = j.id
                 INNER JOIN companies c ON j.company_id = c.id
                 WHERE a.student_id = :uid
-                  AND a.interview_at IS NOT NULL AND a.interview_at >= NOW()
+                  AND a.interview_at IS NOT NULL AND a.interview_at >= CURDATE()
                   AND a.status NOT IN ('withdrawn', 'rejected')
                 ORDER BY a.interview_at ASC
                 LIMIT $limit";
